@@ -22,7 +22,8 @@ the selected input source.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps).
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
-  `10月24 周六 11:04`). The format and locale can be customized via `clock.json` (see Configuration).
+  `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
+  `R > Clock Format` (see Configuration).
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
@@ -88,7 +89,7 @@ after-startup-command = ['exec-and-forget /bin/bash -c "sleep 1; open /Applicati
 ```
 
 Ribbon has no Dock icon. Its menu-bar item `R` offers Re-present, Refresh, Show/Hide Control
-Strip, Set App+ControlStrip mode, IME Color, and Quit.
+Strip, Set App+ControlStrip mode, IME Color, Clock Format, and Quit.
 
 ## Configuration
 
@@ -139,8 +140,9 @@ Notes:
 
 ### Clock format (`clock.json`)
 
-The clock display is configured at `~/Library/Application Support/Ribbon/clock.json`. It is created
-on first launch with the built-in defaults and written as pretty-printed JSON with sorted keys.
+The clock display is configured at `~/Library/Application Support/Ribbon/clock.json` or picked from
+the status menu via `R > Clock Format`. The file is created on first launch with the built-in
+defaults and written as pretty-printed JSON with sorted keys.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -160,7 +162,11 @@ Notes:
 
 - A malformed file is noted in `~/Library/Logs/ribbon.log` and the built-in defaults are used; the
   file itself is never rewritten or deleted by the app.
-- Edits apply after a relaunch, or immediately from the status menu `R > Refresh`.
+- `R > Clock Format` offers five presets (Chinese default, `MMM d EEE HH:mm`, `yyyy-MM-dd EEE HH:mm`,
+  `HH:mm` and `h:mm a`), each shown with today's date. Picking one writes `clock.json` and repaints
+  the clock at once. A pair that matches no preset is shown as a checked `Custom:` entry.
+- `R > Clock Format > Edit clock.json…` opens the file in the default editor. Hand edits apply after
+  a relaunch, or immediately from `R > Refresh`.
 - A custom `format` is rendered verbatim. The built-in `星期` -> `周X` abbreviation only applies to
   the default pattern, so `EEEE` with the default locale may produce `星期六`.
 
@@ -177,7 +183,7 @@ hierarchy be hosted in the bar instead of only `NSTouchBarItem`s.
 - Volume uses `osascript` on a background queue.
 - Battery uses `pmset -g batt`.
 - The clock is formatted with `DateFormatter`; no process is spawned. The pattern and locale come
-  from `clock.json` (the built-in default is preserved).
+  from `clock.json`; the `Clock Format` menu rewrites the file and repaints the clock at once.
 - Workspaces come from the AeroSpace CLI: a refresh runs two calls, `list-workspaces` and
   `list-windows`. `aerospace subscribe` events (focused workspace, window detected, focused monitor,
   focus changed) trigger refreshes, and a 30 s timer re-reads state when no event arrives.

@@ -868,6 +868,11 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
 
     // MARK: - Status (battery + clock)
 
+    /// Repaints the clock label from the active format.
+    func refreshClock() {
+        updateClock()
+    }
+
     /// Updates the clock text. Pure formatting, so no process is spawned.
     private func updateClock() {
         guard !didShutdown else { return }

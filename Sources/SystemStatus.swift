@@ -171,6 +171,25 @@ enum TimeFormat {
                       parts.minute ?? 0)
     }
 
+    /// Writes a picked format to disk and makes it the active one at once.
+    /// The file is written first, but the in-memory configuration follows even
+    /// when the write fails, so the menu and the bar always agree.
+    static func apply(format: String, locale: String) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        let configuration = ClockConfiguration(format: format, locale: locale)
+        writeConfiguration(configuration)
+        cachedConfiguration = configuration
+        cachedFormatter = makeFormatter(configuration)
+        log("clock config updated format=\(configuration.format) locale=\(configuration.locale)")
+    }
+
+    /// The configuration in use, loaded from disk (and created when missing) on
+    /// the first call exactly like the render path does.
+    static func currentConfiguration() -> ClockConfiguration {
+        activeRenderer().configuration
+    }
+
     /// Re-reads the file for the status menu "Refresh" item, then rebuilds the
     /// formatter. It never creates or rewrites the file, so a missing or broken
     /// file simply means the built-in defaults are used.

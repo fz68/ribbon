@@ -6,6 +6,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controlStripItem: NSMenuItem?
     private var inputSourceItem: NSMenuItem?
     private var imeColorItem: NSMenuItem?
+    private var clockFormatItem: NSMenuItem?
+
+    /// The clock formats offered by the "Clock Format" submenu.
+    private static let clockFormatPresets: [(format: String, locale: String)] = [
+        ("M月d EEE HH:mm", "zh_CN"),
+        ("MMM d EEE HH:mm", "en_US"),
+        ("yyyy-MM-dd EEE HH:mm", "en_US"),
+        ("HH:mm", "en_US"),
+        ("h:mm a", "en_US"),
+    ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("launched pid=\(ProcessInfo.processInfo.processIdentifier)")
@@ -50,6 +60,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(imeColor)
         imeColorItem = imeColor
 
+        // Clock format presets and the config file shortcut.
+        let clockFormat = NSMenuItem(title: "Clock Format", action: nil, keyEquivalent: "")
+        clockFormat.submenu = NSMenu()
+        menu.addItem(clockFormat)
+        clockFormatItem = clockFormat
+
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: ""))
         for entry in menu.items { entry.target = self }
@@ -57,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
         updateInputSourceItem()
         rebuildIMEColorMenu()
+        rebuildClockFormatMenu()
     }
 
     /// The menu item always names the action the next click performs.
@@ -115,12 +132,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return entry.line && !entry.rainbow && entry.color == choice.colour
     }
 
+    /// Rebuilds the clock format submenu from the presets and the stored
+    /// configuration. Every item is removed first, so rebuilding never
+    /// duplicates an entry.
+    private func rebuildClockFormatMenu() {
+        guard let submenu = clockFormatItem?.submenu else { return }
+        submenu.removeAllItems()
+        for preset in Self.clockFormatPresets {
+            let choice = ClockFormatChoice(format: preset.format, locale: preset.locale)
+            let item = NSMenuItem(title: Self.clockFormatTitle(for: choice),
+                                  action: #selector(setClockFormat(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice
+            item.state = isSelected(choice) ? .on : .off
+            submenu.addItem(item)
+        }
+        // A hand-edited pair that matches no preset is shown for information only.
+        let current = TimeFormat.currentConfiguration()
+        if !Self.clockFormatPresets.contains(where: { $0.format == current.format && $0.locale == current.locale }) {
+            let choice = ClockFormatChoice(format: current.format, locale: current.locale)
+            let item = NSMenuItem(title: "Custom: \(Self.clockFormatTitle(for: choice))", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            item.state = .on
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let edit = NSMenuItem(title: "Edit clock.json…", action: #selector(openClockConfiguration(_:)), keyEquivalent: "")
+        edit.target = self
+        submenu.addItem(edit)
+    }
+
+    /// The menu title of a choice: the pair rendered for today, for example
+    /// "10月24 周六 15:48".
+    private static func clockFormatTitle(for choice: ClockFormatChoice) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: choice.locale)
+        formatter.dateFormat = choice.format
+        return formatter.string(from: Date())
+    }
+
+    /// True when the stored configuration already uses this clock format.
+    private func isSelected(_ choice: ClockFormatChoice) -> Bool {
+        let current = TimeFormat.currentConfiguration()
+        return current.format == choice.format && current.locale == choice.locale
+    }
+
     @objc private func rePresent() {
         controller.present()
     }
 
     @objc private func refresh() {
         TimeFormat.reload()
+        rebuildClockFormatMenu()
+        controller.refreshClock()
         controller.refreshNow()
     }
 
@@ -144,6 +208,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log("ime colour \(choice.id) -> \(style)")
     }
 
+    /// Stores the picked clock format and repaints the clock at once.
+    @objc private func setClockFormat(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ClockFormatChoice else { return }
+        TimeFormat.apply(format: choice.format, locale: choice.locale)
+        controller.refreshClock()
+        rebuildClockFormatMenu()
+        log("clock format -> \(choice.format) (\(choice.locale))")
+    }
+
+    /// Opens clock.json in whatever app owns JSON files.
+    @objc private func openClockConfiguration(_ sender: NSMenuItem) {
+        NSWorkspace.shared.open(URL(fileURLWithPath: TimeFormat.configurationPath))
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -164,6 +242,19 @@ private final class IMEAppearanceChoice: NSObject {
         self.line = line
         self.colour = colour
         self.rainbow = rainbow
+        super.init()
+    }
+}
+
+/// The clock format a menu item stands for. Like IMEAppearanceChoice it travels
+/// to the action as the represented object of the menu item.
+private final class ClockFormatChoice: NSObject {
+    let format: String
+    let locale: String
+
+    init(format: String, locale: String) {
+        self.format = format
+        self.locale = locale
         super.init()
     }
 }
