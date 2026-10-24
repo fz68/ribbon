@@ -22,7 +22,7 @@ the selected input source.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps).
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
-  `10月24 周六 11:04`).
+  `10月24 周六 11:04`). The format and locale can be customized via `clock.json` (see Configuration).
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
@@ -45,12 +45,15 @@ the selected input source.
 ```sh
 make        # build the app bundle at build/Ribbon.app
 make run    # kill a running Ribbon, then open build/Ribbon.app
+make dmg    # stage build/dmg and package build/Ribbon-<version>.dmg
 make clean  # remove build/
 ```
 
 `make` compiles the Swift sources with `swiftc` (Swift 5 mode, arm64, macOS 13 deployment target),
 assembles the app bundle and ad-hoc signs it. There is no Xcode project; the build is a single
-Makefile.
+Makefile. `make dmg` additionally stages the bundle and an `Applications` symlink into `build/dmg`,
+then packs it into `build/Ribbon-<version>.dmg` with `hdiutil create -format UDZO`; the version
+comes from `Resources/Info.plist`.
 
 ## Install
 
@@ -60,6 +63,9 @@ Copy the built bundle to `/Applications` or `~/Applications`:
 cp -R build/Ribbon.app /Applications/
 open /Applications/Ribbon.app
 ```
+
+If you built a release image with `make dmg`, mount `build/Ribbon-<version>.dmg` and drag
+`Ribbon.app` into `Applications`.
 
 To start at login, add a LaunchAgent such as `~/Library/LaunchAgents/local.fanzhen.ribbon.plist`:
 
@@ -81,13 +87,16 @@ Alternatively let AeroSpace start it:
 after-startup-command = ['exec-and-forget /bin/bash -c "sleep 1; open /Applications/Ribbon.app"']
 ```
 
-Ribbon has no Dock icon. Its menu-bar item `R` offers Re-present, Refresh, Show/Hide Control Strip,
-Set App+ControlStrip mode, and Quit.
+Ribbon has no Dock icon. Its menu-bar item `R` offers Re-present, Refresh, Show/Hide Control
+Strip, Set App+ControlStrip mode, IME Color, and Quit.
 
 ## Configuration
 
-The only configuration file is the input source line at
-`~/Library/Application Support/Ribbon/ime.json`.
+There are two configuration files: the input source line at
+`~/Library/Application Support/Ribbon/ime.json` and the clock display at
+`~/Library/Application Support/Ribbon/clock.json`.
+
+### Input source line (`ime.json`)
 
 It is created on first launch with a built-in default entry per enabled input source. The file is
 written as pretty-printed JSON with sorted keys. If it cannot be parsed, Ribbon logs the error, falls
@@ -128,6 +137,33 @@ Notes:
 - The palette used by the in-app menu and by the generated defaults is Red `#FF5F57`, Orange
   `#FF8C42`, Yellow `#FFD60A`, Green `#4CD964`, Cyan `#40C8E0`, Blue `#4FA3FF`, Purple `#B388FF`.
 
+### Clock format (`clock.json`)
+
+The clock display is configured at `~/Library/Application Support/Ribbon/clock.json`. It is created
+on first launch with the built-in defaults and written as pretty-printed JSON with sorted keys.
+
+| Key | Type | Meaning |
+| --- | --- | --- |
+| `format` | string | ICU date format pattern, default `M月d EEE HH:mm` |
+| `locale` | string | BCP 47 locale identifier, default `zh_CN` |
+
+Example:
+
+```json
+{
+  "format" : "yyyy-MM-dd HH:mm",
+  "locale" : "en_US"
+}
+```
+
+Notes:
+
+- A malformed file is noted in `~/Library/Logs/ribbon.log` and the built-in defaults are used; the
+  file itself is never rewritten or deleted by the app.
+- Edits apply after a relaunch, or immediately from the status menu `R > Refresh`.
+- A custom `format` is rendered verbatim. The built-in `星期` -> `周X` abbreviation only applies to
+  the default pattern, so `EEEE` with the default locale may produce `星期六`.
+
 The log is written to `~/Library/Logs/ribbon.log`; follow it with `tail -f`.
 
 ## How it works
@@ -140,7 +176,8 @@ hierarchy be hosted in the bar instead of only `NSTouchBarItem`s.
   `DisplayServicesSetBrightness`).
 - Volume uses `osascript` on a background queue.
 - Battery uses `pmset -g batt`.
-- The clock is formatted with `DateFormatter`; no process is spawned.
+- The clock is formatted with `DateFormatter`; no process is spawned. The pattern and locale come
+  from `clock.json` (the built-in default is preserved).
 - Workspaces come from the AeroSpace CLI: a refresh runs two calls, `list-workspaces` and
   `list-windows`. `aerospace subscribe` events (focused workspace, window detected, focused monitor,
   focus changed) trigger refreshes, and a 30 s timer re-reads state when no event arrives.
@@ -161,6 +198,8 @@ nor distributed through the App Store.
   996 pt. Strip mode uses 684 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and
   re-presenting from the menu usually restores it.
+- The build targets Apple silicon only (`-target arm64-apple-macosx13.0`); the Intel Touch Bar
+  models (2016-2019 13-inch and 15-inch) are not supported.
 - The build is ad-hoc signed and not notarized. A downloaded copy is blocked by Gatekeeper until
   you choose Open Anyway, or you can run `xattr -d com.apple.quarantine /Applications/Ribbon.app`.
 
