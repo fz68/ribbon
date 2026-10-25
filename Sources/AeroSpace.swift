@@ -6,6 +6,7 @@ enum AeroSpace {
     static let maxAppsPerWorkspace = 3
 
     private static let queue = DispatchQueue(label: "local.ribbon.aerospace")
+    private static let reapQueue = DispatchQueue(label: "local.ribbon.aerospace.reap", qos: .utility)
     private static let errorLock = NSLock()
 
     /// The AeroSpace CLI. Only the two Homebrew prefixes are searched, never
@@ -228,23 +229,28 @@ enum AeroSpace {
         childPipe?.fileHandleForReading.readabilityHandler = nil
         childPipe = nil
 
+        // SIGTERM is a single kill(2) syscall, so it stays synchronous on this
+        // queue and is delivered before shutdown() can let the app exit.
         if process.isRunning {
             process.terminate()
         }
 
-        // Reap the child, otherwise it stays a zombie until the app exits.
-        // The wait runs on a background queue and is bounded, so the AeroSpace
-        // queue is never held for more than a few seconds.
-        let reaped = DispatchGroup()
-        reaped.enter()
-        DispatchQueue.global(qos: .utility).async {
-            process.waitUntilExit()
-            reaped.leave()
-        }
-        if reaped.wait(timeout: .now() + 2) == .timedOut {
-            // SIGTERM was ignored: escalate so the child cannot outlive us.
-            _ = kill(pid, SIGKILL)
-            _ = reaped.wait(timeout: .now() + 2)
+        // Reap the child, otherwise it stays a zombie until the app exits. The
+        // serial queue is held only for the state mutation and the SIGTERM
+        // syscall; the bounded wait runs on `reapQueue`, so a workspace tap
+        // issued right after a restart is not stuck behind it.
+        reapQueue.async {
+            let reaped = DispatchGroup()
+            reaped.enter()
+            DispatchQueue.global(qos: .utility).async {
+                process.waitUntilExit()
+                reaped.leave()
+            }
+            if reaped.wait(timeout: .now() + 1) == .timedOut {
+                // SIGTERM was ignored: escalate so the child cannot outlive us.
+                _ = kill(pid, SIGKILL)
+                _ = reaped.wait(timeout: .now() + 1)
+            }
         }
     }
 

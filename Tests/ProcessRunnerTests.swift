@@ -21,6 +21,19 @@ internal func runProcessRunnerTests(_ t: TestRunner) {
         t.expect(elapsed < 2.0,
                  "the timeout case returns well before the child would finish (took \(elapsed)s)")
 
+        // `sleep 20 &` inherits the write end of the pipe, so EOF never arrives
+        // even after the shell itself is killed. The run must still return
+        // promptly, with the stdout written before the deadline and `timedOut`
+        // set.
+        let grandchildStarted = Date()
+        let grandchild = ProcessRunner.run("/bin/sh", ["-c", "sleep 20 & echo hi; sleep 20"], timeout: 1)
+        let grandchildElapsed = Date().timeIntervalSince(grandchildStarted)
+        t.expect(grandchild.timedOut, "a grandchild holding stdout does not stall the run")
+        t.expect(grandchildElapsed < 4.0,
+                 "the reader is abandoned when a grandchild holds stdout (took \(grandchildElapsed)s)")
+        t.expectEqual(grandchild.stdout, Data("hi\n".utf8),
+                      "output written before the grandchild held the pipe is collected")
+
         let missing = ProcessRunner.run("/nonexistent/binary", [])
         t.expectEqual(missing.status, -1, "a launch failure reports status -1")
         t.expect(missing.launchError != nil, "a launch failure reports its error")

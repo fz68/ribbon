@@ -36,12 +36,41 @@ private final class OutputCollector: @unchecked Sendable {
     }
 }
 
+/// Tells the pipe reader to stop waiting for EOF.
+///
+/// A blocking `read(2)` cannot be abandoned, so the reader polls a non-blocking
+/// fd and checks this flag between polls.
+private final class StopFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped = false
+
+    /// True once the reader has been told to give up.
+    var isSet: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopped
+    }
+
+    /// Tells the reader to give up.
+    func set() {
+        lock.lock()
+        stopped = true
+        lock.unlock()
+    }
+}
+
 /// Runs short-lived child processes.
 ///
 /// Every run drains stdout continuously, so a chatty child can never block on a
-/// full pipe. Every run is bounded: a child that hangs is terminated and killed,
-/// and is reaped on every path. Should the post-SIGKILL wait still time out, the
-/// OS reaps the child when it finally exits.
+/// full pipe. Every run is bounded: the child's exit is bounded by `timeout`, a
+/// child that hangs is terminated and killed, and it is reaped on every path.
+/// Should the post-SIGKILL wait still time out, the OS reaps the child when it
+/// finally exits.
+///
+/// The read is bounded by `timeout` plus a short grace. A grandchild that
+/// inherits the write end keeps the pipe open after the child is gone, so the
+/// reader is abandoned through a stop flag instead of being leaked; the fd is
+/// left to the OS rather than closed from another thread.
 enum ProcessRunner {
     /// The workers run concurrently, so one stuck reader never blocks the next run.
     private static let workers = DispatchQueue(label: "local.ribbon.process",
@@ -51,11 +80,23 @@ enum ProcessRunner {
     /// How long a killed child gets to die after SIGTERM before it is SIGKILLed.
     private static let terminationGrace: TimeInterval = 0.25
 
+    /// How long the reader gets to reach EOF after the child is gone.
+    ///
+    /// Deliberately larger than `terminationGrace`: the reader runs on a
+    /// concurrent `.utility` queue, so abandoning it too eagerly would truncate
+    /// the stdout of a healthy child. Only a grandchild holding the write end can
+    /// keep the read alive this long.
+    private static let readGrace: TimeInterval = 1.0
+
     /// Runs `executable` and waits for it.
     ///
-    /// Blocking: never call this on the main thread. The read and the exit are
-    /// both bounded by `timeout`; when the deadline passes the child is
-    /// terminated, killed and reaped, and the result is marked as timed out.
+    /// Blocking: never call this on the main thread. The child's exit is bounded
+    /// by `timeout`; when the deadline passes the child is terminated, killed
+    /// and reaped, and the result is marked as timed out.
+    ///
+    /// The read is bounded separately by `timeout` plus `readGrace`. The
+    /// read may outlive the child when a grandchild holds the write end, so it
+    /// is abandoned - never leaked - once that grace expires.
     @discardableResult
     static func run(_ executable: String, _ arguments: [String], timeout: TimeInterval = 5) -> ProcessResult {
         let process = Process()
@@ -74,16 +115,32 @@ enum ProcessRunner {
         }
 
         let collector = OutputCollector()
+        let stopReading = StopFlag()
         let readFinished = DispatchGroup()
         readFinished.enter()
         // Drain the pipe right away: a child that writes more than the pipe
-        // buffer holds would block forever if nobody read.
+        // buffer holds would block forever if nobody read. The fd is polled
+        // non-blocking so the reader can be abandoned when a grandchild keeps
+        // the write end open after the child itself is gone.
         workers.async {
-            let handle = pipe.fileHandleForReading
+            let fd = pipe.fileHandleForReading.fileDescriptor
+            let flags = fcntl(fd, F_GETFL, 0)
+            _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK)
+            var buffer = [UInt8](repeating: 0, count: 65536)
             while true {
-                let chunk = handle.availableData
-                if chunk.isEmpty { break }
-                collector.append(chunk)
+                if stopReading.isSet { break }
+                let count = read(fd, &buffer, buffer.count)
+                if count > 0 {
+                    collector.append(Data(buffer[0..<Int(count)]))
+                    continue
+                }
+                if count == 0 { break }
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    usleep(2_000)
+                    continue
+                }
+                break
             }
             readFinished.leave()
         }
@@ -97,12 +154,9 @@ enum ProcessRunner {
             childExited.leave()
         }
 
-        // One deadline covers the child's exit and the end of the read: a child
-        // that leaves a grandchild holding stdout keeps the pipe open forever,
-        // so a timeout on the child alone would not be enough.
+        // `timedOut` means "the child did not finish before the deadline".
         let deadline = DispatchTime.now() + .nanoseconds(Int(timeout * 1_000_000_000))
         var timedOut = false
-        if readFinished.wait(timeout: deadline) == .timedOut { timedOut = true }
         if childExited.wait(timeout: deadline) == .timedOut { timedOut = true }
 
         if timedOut, process.isRunning {
@@ -111,6 +165,16 @@ enum ProcessRunner {
                 _ = kill(process.processIdentifier, SIGKILL)
                 _ = childExited.wait(timeout: .now() + terminationGrace)
             }
+        }
+
+        // The read may legitimately outlive the child when a grandchild holds
+        // the write end, so it gets its own short grace and is then abandoned
+        // via the stop flag rather than by closing the fd from another thread
+        // (closing an fd another thread is blocked in `read()` on is not
+        // reliable on Darwin).
+        if readFinished.wait(timeout: .now() + readGrace) == .timedOut {
+            stopReading.set()
+            _ = readFinished.wait(timeout: .now() + readGrace)
         }
 
         // The status is only valid once the child has been reaped.
