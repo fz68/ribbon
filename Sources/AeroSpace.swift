@@ -9,9 +9,12 @@ enum AeroSpace {
     static let reapQueue = DispatchQueue(label: "local.ribbon.aerospace.reap", qos: .utility)
     private static let errorLock = NSLock()
 
+    /// Test hook: when non-nil, used instead of the discovered binary.
+    static var binaryOverride: String?
+
     /// The AeroSpace CLI. Only the two Homebrew prefixes are searched, never
     /// `$PATH`, so the app always drives the install the user set up.
-    static let binary: String? = ToolLocator.find("aerospace", searchPATH: false)
+    static var binary: String? { binaryOverride ?? ToolLocator.find("aerospace", searchPATH: false) }
 
     // Feature probe: `subscribe --help` exits 0 on versions that support events.
     // A launch failure and a timeout both mean "no subscribe".
@@ -63,10 +66,19 @@ enum AeroSpace {
     }
 
     private static func windowsByWorkspace(_ binary: String) -> [String: [String]] {
-        guard let data = run(binary, ["list-windows", "--all", "--format", "%{workspace}|%{app-name}"]),
-              let text = String(data: data, encoding: .utf8) else {
+        guard let data = run(binary, ["list-windows", "--all", "--format", "%{workspace}|%{app-name}"]) else {
             return [:]
         }
+        return windowsByWorkspace(from: data)
+    }
+
+    /// Parses the `workspace|app` lines produced by
+    /// `list-windows --all --format '%{workspace}|%{app-name}'`.
+    ///
+    /// Each workspace keeps its apps deduped, sorted, and capped at
+    /// `maxAppsPerWorkspace`.
+    static func windowsByWorkspace(from data: Data) -> [String: [String]] {
+        guard let text = String(data: data, encoding: .utf8) else { return [:] }
         var result: [String: Set<String>] = [:]
         for line in text.split(whereSeparator: \.isNewline) {
             guard let separator = line.firstIndex(of: "|") else { continue }
@@ -96,7 +108,7 @@ enum AeroSpace {
         }
     }
 
-    private static func run(_ binary: String, _ arguments: [String]) -> Data? {
+    static func run(_ binary: String, _ arguments: [String]) -> Data? {
         let result = ProcessRunner.run(binary, arguments, timeout: 5)
         if result.timedOut {
             logThrottled("aerospace \(arguments.joined(separator: " ")) timed out")
@@ -131,5 +143,12 @@ enum AeroSpace {
         lastErrorLog = now
         errorLock.unlock()
         log(message)
+    }
+
+    /// Test hook: re-arms the throttle gate, so the next call always writes.
+    static func resetLogThrottleForTesting() {
+        errorLock.lock()
+        lastErrorLog = Date.distantPast
+        errorLock.unlock()
     }
 }

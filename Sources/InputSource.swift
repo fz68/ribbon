@@ -70,7 +70,8 @@ enum InputSource {
 
     /// Where the per source configuration lived before the app was renamed. It is
     /// only read once, to carry an existing configuration over to the new path.
-    private static let legacyConfigurationPath = (NSString(string: "~/Library/Application Support/TouchBarBar/ime.json") as NSString).expandingTildeInPath
+    /// Overridable so tests can point it at a temporary file.
+    static var legacyConfigurationPath = (NSString(string: "~/Library/Application Support/TouchBarBar/ime.json") as NSString).expandingTildeInPath
 
     private static let stateLock = NSRecursiveLock()
     /// Guards `cachedBuiltInConfiguration` only. It is a leaf lock: never acquire
@@ -80,7 +81,8 @@ enum InputSource {
     private static var cachedBuiltInConfiguration: Configuration?
     /// Set by the first `migrateLegacyConfigurationIfNeeded()` call, so the
     /// legacy file is looked for once per process rather than once per read.
-    private static var didMigrateLegacyConfiguration = false
+    /// Resettable so tests can re-arm the one-shot migration.
+    static var didMigrateLegacyConfiguration = false
 
     /// The generic store behind the configuration file. The built-in defaults
     /// are rebuilt from the live source list, so a newly installed IME gets an

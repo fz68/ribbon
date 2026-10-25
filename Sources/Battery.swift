@@ -7,8 +7,14 @@ enum Battery {
         let result = ProcessRunner.run("/usr/bin/pmset", ["-g", "batt"], timeout: 5)
         guard !result.timedOut,
               result.status == 0,
-              let text = String(data: result.stdout, encoding: .utf8),
-              let range = text.range(of: "[0-9]{1,3}%", options: .regularExpression),
+              let text = String(data: result.stdout, encoding: .utf8) else { return nil }
+        return parse(text)
+    }
+
+    /// Reads the percentage and the charging state out of `pmset` output.
+    /// Pure, so the parsing is testable without spawning `pmset`.
+    static func parse(_ text: String) -> BatteryState? {
+        guard let range = text.range(of: "[0-9]{1,3}%", options: .regularExpression),
               let percent = Int(text[range].dropLast()) else { return nil }
         return BatteryState(percent: percent, charging: isCharging(text))
     }

@@ -11,7 +11,7 @@ enum Media {
     // MARK: - Tool discovery
 
     /// The helper path, or nil when the helper is not installed.
-    static let toolPath: String? = ToolLocator.find("nowplaying-cli", searchPATH: true)
+    static var toolPath: String? = ToolLocator.find("nowplaying-cli", searchPATH: true)
 
     /// Serial queue so transport commands keep their order and never block the UI.
     private static let commandQueue = DispatchQueue(label: "local.ribbon.media.command")

@@ -1,4 +1,5 @@
 import Cocoa
+import RibbonBridge
 
 private func loadDFRCloseBox() -> (@convention(c) (Bool) -> Void)? {
     let path = "/System/Library/PrivateFrameworks/DFRFoundation.framework/DFRFoundation"
@@ -17,7 +18,7 @@ private func loadDFRCloseBox() -> (@convention(c) (Bool) -> Void)? {
     return unsafeBitCast(symbol, to: (@convention(c) (Bool) -> Void).self)
 }
 
-final class TouchBarController: NSObject, NSTouchBarDelegate {
+public final class TouchBarController: NSObject, NSTouchBarDelegate {
     let touchBar = NSTouchBar()
     lazy var closeBoxFn: (@convention(c) (Bool) -> Void)? = loadDFRCloseBox()
     let container = BarContainer(frame: NSRect(x: 0, y: 0, width: Theme.Layout.fullWidth, height: Theme.Layout.containerHeight))
@@ -118,7 +119,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// Called whenever the selected input source changes, so the status menu can follow.
     var onInputSourceChanged: ((String, String) -> Void)?
 
-    override init() {
+    public override init() {
         super.init()
         touchBar.delegate = self
         touchBar.defaultItemIdentifiers = [NSTouchBarItem.Identifier("local.ribbon.main"), .flexibleSpace]
@@ -195,7 +196,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         log("dismissed")
     }
 
-    func shutdown() {
+    public func shutdown() {
         guard !didShutdown else { return }
         didShutdown = true
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -274,7 +275,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         log("front app=\(name)")
     }
 
-    func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
+    public func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
         guard identifier == NSTouchBarItem.Identifier("local.ribbon.main") else { return nil }
         let item = NSCustomTouchBarItem(identifier: identifier)
         item.view = container

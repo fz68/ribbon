@@ -4,7 +4,10 @@ import Foundation
 enum Volume {
     /// Adds `delta` to the output volume (clamped to 0...100) and returns the new value.
     /// Synchronous: callers must run it off the main thread. Returns nil on failure.
-    static func adjust(by delta: Int) -> Int? {
+    ///
+    /// - Parameter run: the process runner. Injected by tests; the real one by default.
+    static func adjust(by delta: Int,
+                       run: (String, [String], TimeInterval) -> ProcessResult? = ProcessRunner.run) -> Int? {
         let script = """
         set v to (output volume of (get volume settings)) + (\(delta))
         if v > 100 then set v to 100
@@ -12,8 +15,8 @@ enum Volume {
         set volume output volume v
         return v
         """
-        let result = ProcessRunner.run("/usr/bin/osascript", ["-e", script], timeout: 5)
-        guard !result.timedOut,
+        guard let result = run("/usr/bin/osascript", ["-e", script], 5),
+              !result.timedOut,
               result.status == 0,
               let text = String(data: result.stdout, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               let value = Int(text) else { return nil }

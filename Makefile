@@ -1,22 +1,20 @@
-SDKROOT := $(shell xcrun --show-sdk-path)
-APP := build/Ribbon.app
-BIN := build/Ribbon
-VERSION := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
-DMG := build/Ribbon-$(VERSION).dmg
+APP      := build/Ribbon.app
+BIN      := .build/release/Ribbon
+VERSION  := $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+DMG      := build/Ribbon-$(VERSION).dmg
+PROFDATA := build/RibbonTests.profdata
 
-SOURCES      := $(wildcard Sources/*.swift)
-BRIDGING     := Sources/Bridging-Header.h
-TEST_SOURCES := $(filter-out Sources/main.swift,$(SOURCES)) $(wildcard Tests/*.swift)
-SWIFTBASE    := -swift-version 5 -target arm64-apple-macosx13.0 -sdk $(SDKROOT) -import-objc-header $(BRIDGING)
+# Coverage artifacts live next to the debug products; ask SwiftPM where that is.
+BIN_DIR  := $(shell swift build --show-bin-path)
 
-.PHONY: all run clean dmg test lint FORCE
+.PHONY: all run clean dmg test lint coverage FORCE
 
 all: $(APP)/Contents/Info.plist $(APP)/Contents/MacOS/Ribbon
 	codesign --force --sign - $(APP)
 
-$(BIN): $(SOURCES) $(BRIDGING) FORCE
-	mkdir -p build
-	swiftc $(SWIFTBASE) -O $(SOURCES) -o $(BIN) -framework Cocoa
+# SwiftPM decides what is stale; FORCE just lets the rule run on every make.
+$(BIN): FORCE
+	swift build -c release
 
 $(APP)/Contents/MacOS/Ribbon: $(BIN)
 	mkdir -p $(dir $@)
@@ -26,16 +24,20 @@ $(APP)/Contents/Info.plist: Resources/Info.plist
 	mkdir -p $(dir $@)
 	cp Resources/Info.plist $@
 
-build/RibbonTests: $(TEST_SOURCES) $(BRIDGING) FORCE
-	mkdir -p build
-	swiftc $(SWIFTBASE) -parse-as-library $(TEST_SOURCES) -o build/RibbonTests -framework Cocoa
-
-test: build/RibbonTests
-	./build/RibbonTests
+# Serialized on purpose: the tests share a process-global log path.
+test:
+	swift test --no-parallel
 
 lint:
-	swiftc -typecheck -warnings-as-errors $(SWIFTBASE) $(SOURCES)
-	swiftc -typecheck -warnings-as-errors $(SWIFTBASE) -parse-as-library $(TEST_SOURCES)
+	swift build -Xswiftc -warnings-as-errors
+	swift build --build-tests -Xswiftc -warnings-as-errors
+
+coverage:
+	rm -f $(PROFDATA)
+	swift test --no-parallel --enable-code-coverage
+	xcrun llvm-profdata merge -sparse $(BIN_DIR)/codecov/default.profdata -o $(PROFDATA)
+	xcrun llvm-cov report $(BIN_DIR)/RibbonPackageTests.xctest/Contents/MacOS/RibbonPackageTests \
+		-instr-profile=$(PROFDATA) Sources Tests
 
 run: all
 	-pkill -x Ribbon
@@ -50,6 +52,6 @@ dmg: all
 	hdiutil create -volname Ribbon -srcfolder build/dmg -format UDZO -ov $(DMG)
 
 clean:
-	rm -rf build
+	rm -rf build .build
 
 FORCE:

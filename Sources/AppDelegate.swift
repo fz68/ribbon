@@ -1,7 +1,7 @@
 import Cocoa
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    let controller = TouchBarController()
+public final class AppDelegate: NSObject, NSApplicationDelegate {
+    public let controller = TouchBarController()
     private var statusItem: NSStatusItem?
     private var controlStripItem: NSMenuItem?
     private var inputSourceItem: NSMenuItem?
@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ("h:mm a", "en_US"),
     ]
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         log("launched pid=\(ProcessInfo.processInfo.processIdentifier)")
         setupStatusItem()
         controller.onControlStripStateChanged = { [weak self] visible in
@@ -33,7 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         controller.shutdown()
     }
 

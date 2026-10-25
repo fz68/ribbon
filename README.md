@@ -39,28 +39,33 @@ the selected input source.
   `/opt/homebrew/bin/aerospace` or `/usr/local/bin/aerospace`.
 - Optional: `nowplaying-cli` for media state (`brew install nowplaying-cli`). Without it, Ribbon
   posts the system media keys instead.
-- Xcode Command Line Tools (`swiftc`, `codesign`).
+- Xcode or the Command Line Tools with Swift 5.9 or newer (`swift`, `codesign`).
 
 ## Build
 
 ```sh
-make        # build the app bundle at build/Ribbon.app
-make run    # kill a running Ribbon, then open build/Ribbon.app
-make test   # compile and run the test suite
-make lint   # type-check Sources and Tests with -warnings-as-errors
-make dmg    # stage build/dmg and package build/Ribbon-<version>.dmg
-make clean  # remove build/
+swift build    # build the package in debug configuration
+make           # build the release app bundle at build/Ribbon.app
+make run       # kill a running Ribbon, then open build/Ribbon.app
+make test      # run the test suite (swift test --no-parallel)
+make coverage  # run the tests with coverage and print an llvm-cov report
+make lint      # build Sources and Tests with -warnings-as-errors
+make dmg       # stage build/dmg and package build/Ribbon-<version>.dmg
+make clean     # remove build/ and .build/
 ```
 
-`make` compiles the Swift sources with `swiftc` (Swift 5 mode, arm64, macOS 13 deployment target),
-assembles the app bundle and ad-hoc signs it. There is no Xcode project; the build is a single
-Makefile. `make dmg` additionally stages the bundle and an `Applications` symlink into `build/dmg`,
-then packs it into `build/Ribbon-<version>.dmg` with `hdiutil create -format UDZO`; the version
-comes from `Resources/Info.plist`.
+Ribbon is a SwiftPM package (`Package.swift`): `RibbonCore` is the library, `Ribbon` the
+executable and `RibbonTests` the test target. The Makefile is a thin facade over SwiftPM: `make`
+runs `swift build -c release`, copies `.build/release/Ribbon` and `Resources/Info.plist` into
+`build/Ribbon.app` and ad-hoc signs it. There is no Xcode project. `make dmg` additionally stages
+the bundle and an `Applications` symlink into `build/dmg`, then packs it into
+`build/Ribbon-<version>.dmg` with `hdiutil create -format UDZO`; the version comes from
+`Resources/Info.plist`.
 
-`make test` compiles `Sources/` (without `main.swift`, which holds the entry point) together with
-`Tests/*.swift` into a single module and runs the resulting binary; a non-zero exit fails the
-target. `make lint` type-checks both the app sources and the test sources with
+`make test` runs `swift test --no-parallel`; the tests are serialized because they share a
+process-global log path, and a non-zero exit fails the target. `make coverage` re-runs them with
+`--enable-code-coverage`, merges the profile with `llvm-profdata` and prints an `llvm-cov report`
+covering `Sources/` and `Tests/`. `make lint` builds the package and the test targets with
 `-warnings-as-errors`, so any new compiler diagnostic fails the build. CI runs `make lint`,
 `make test` and `make all` on an arm64 macOS runner (`.github/workflows/ci.yml`).
 
@@ -212,8 +217,8 @@ nor distributed through the App Store.
   996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and
   re-presenting from the menu usually restores it.
-- The build targets Apple silicon only (`-target arm64-apple-macosx13.0`); the Intel Touch Bar
-  models (2016-2019 13-inch and 15-inch) are not supported.
+- Only Apple silicon is supported; SwiftPM builds for the host architecture, so the Intel Touch Bar
+  models (2016-2019 13-inch and 15-inch) are untested and unsupported.
 - The build is ad-hoc signed and not notarized. A downloaded copy is blocked by Gatekeeper until
   you choose Open Anyway, or you can run `xattr -d com.apple.quarantine /Applications/Ribbon.app`.
 
