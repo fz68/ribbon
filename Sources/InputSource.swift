@@ -329,6 +329,33 @@ final class InputSourceWatcher {
             nil,
             .deliverImmediately
         )
+
+        // The enabled set changes when an IME is installed or removed, which can
+        // reassign the round-robin palette colours without the selection moving.
+        if let enabled = kTISNotifyEnabledKeyboardInputSourcesChanged {
+            CFNotificationCenterAddObserver(
+                CFNotificationCenterGetDistributedCenter(),
+                context,
+                { _, observer, _, _, _ in
+                    guard let observer else { return }
+                    let watcher = Unmanaged<InputSourceWatcher>.fromOpaque(observer).takeUnretainedValue()
+                    DispatchQueue.main.async {
+                        watcher.handleEnabledSourcesChanged()
+                    }
+                },
+                enabled,
+                nil,
+                .deliverImmediately
+            )
+        }
+    }
+
+    /// The enabled set changes when an IME is installed or removed, which can
+    /// reassign the round-robin palette colours without the selection moving.
+    private func handleEnabledSourcesChanged() {
+        InputSource.invalidateBuiltInCache()
+        guard let current = InputSource.current else { return }
+        onChange?(current.id, current.name)
     }
 
     private func handleNotification() {

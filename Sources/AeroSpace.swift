@@ -91,7 +91,7 @@ enum AeroSpace {
             }
             // `run` returns nil when the command timed out, failed to start or
             // exited with a non-zero status.
-            let succeeded = run(binary, ["workspace", name]) != nil
+            let succeeded = run(binary, ["workspace", "--", name]) != nil
             DispatchQueue.main.async { completion?(succeeded) }
         }
     }
