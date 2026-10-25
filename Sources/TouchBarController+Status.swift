@@ -54,7 +54,11 @@ extension TouchBarController {
     /// Updates the clock text. Pure formatting, so no process is spawned.
     func updateClock() {
         guard !didShutdown else { return }
-        timeLabel.stringValue = TimeFormat.string(from: Date())
+        // Skip identical text so a 30 s tick that did not change the minute avoids a no-op CA transaction.
+        let text = TimeFormat.string(from: Date())
+        if timeLabel.stringValue != text {
+            timeLabel.stringValue = text
+        }
     }
 
     /// Reads the battery (one `pmset` call) and updates the percentage label.
@@ -83,10 +87,16 @@ extension TouchBarController {
     }
 
     func applyBattery(_ status: BatteryState?) {
+        // Skip identical text so an unchanged battery reading avoids a no-op CA transaction.
         guard let status else {
-            batteryLabel.stringValue = "--%"
+            if batteryLabel.stringValue != "--%" {
+                batteryLabel.stringValue = "--%"
+            }
             return
         }
-        batteryLabel.stringValue = "\(status.percent)%"
+        let text = "\(status.percent)%"
+        if batteryLabel.stringValue != text {
+            batteryLabel.stringValue = text
+        }
     }
 }

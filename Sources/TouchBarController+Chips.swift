@@ -1,32 +1,49 @@
 import Cocoa
 
 extension TouchBarController {
+    /// Rebuilds the chip row, reusing the existing chips in place.
+    ///
+    /// Only the empty state and a chip-count change touch the view tree; a
+    /// workspace data change is applied through `ChipView.update`, so the chips
+    /// and their constraints survive a refresh or a tap.
     func rebuildChips() {
-        for view in leftStack.arrangedSubviews {
-            leftStack.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
         guard !workspaces.isEmpty else {
+            for view in leftStack.arrangedSubviews {
+                leftStack.removeArrangedSubview(view)
+                view.removeFromSuperview()
+            }
             leftStack.addArrangedSubview(makePlaceholderChip())
             return
         }
+        // A previous empty state leaves the "?" placeholder in the row.
+        for view in leftStack.arrangedSubviews where !(view is ChipView) {
+            leftStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+        let chips = leftStack.arrangedSubviews.compactMap { $0 as? ChipView }
+        if chips.count > workspaces.count {
+            for chip in chips[workspaces.count...] {
+                leftStack.removeArrangedSubview(chip)
+                chip.removeFromSuperview()
+            }
+        }
+        // Chips are reused positionally; only a count change adds or removes views.
         for (index, workspace) in workspaces.enumerated() {
-            leftStack.addArrangedSubview(makeChip(workspace, index: index))
+            if index < chips.count {
+                chips[index].update(workspace: workspace, index: index)
+            } else {
+                leftStack.addArrangedSubview(makeChip(workspace, index: index))
+            }
         }
     }
 
     func makeChip(_ workspace: Workspace, index: Int) -> ChipView {
-        let chip = ChipView(
+        ChipView(
             workspace: workspace,
             index: index,
             target: self,
             action: #selector(chipTapped(_:))
         )
-        chip.widthAnchor.constraint(
-            equalToConstant: max(Theme.Layout.chipMinWidth, min(Theme.Layout.chipMaxWidth, chip.stack.fittingSize.width + Theme.Layout.chipWidthPadding))
-        ).isActive = true
-        chip.heightAnchor.constraint(equalToConstant: Theme.Layout.controlSize).isActive = true
-        return chip
     }
 
     func makePlaceholderChip() -> NSButton {

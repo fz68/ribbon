@@ -24,20 +24,16 @@ extension TouchBarController {
     }
 
     /// Paints the line: a solid colour or a horizontal rainbow gradient.
+    /// Mutates the line's single reused layer in place, so a style change never
+    /// allocates or reassigns the backing layer of a view already in a window.
     /// No animation runs, the line is static so it costs nothing.
     func applyIMELineStyle(color: NSColor?, rainbow: Bool) {
         if rainbow {
-            let gradient = CAGradientLayer()
-            gradient.colors = InputSource.rainbowHex.compactMap { NSColor(hex: $0)?.cgColor }
-            gradient.startPoint = CGPoint(x: 0, y: 0.5)
-            gradient.endPoint = CGPoint(x: 1, y: 0.5)
-            gradient.masksToBounds = true
-            imeLine.layer = gradient
+            imeLine.gradientLayer.colors = InputSource.rainbowHex.compactMap { NSColor(hex: $0)?.cgColor }
+            imeLine.gradientLayer.backgroundColor = nil
         } else {
-            let solid = CALayer()
-            solid.backgroundColor = color?.cgColor
-            solid.masksToBounds = true
-            imeLine.layer = solid
+            imeLine.gradientLayer.colors = nil
+            imeLine.gradientLayer.backgroundColor = color?.cgColor
         }
     }
 

@@ -113,7 +113,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// The indicator line along the very bottom edge of the bar. It is 2 pt tall
     /// and sits in the 3 pt of slack under the 24 pt chips, so it costs no
     /// horizontal space and never overlaps a control.
-    let imeLine = NSView(frame: NSRect(x: 0, y: 0, width: Theme.Layout.fullWidth, height: Theme.Layout.indicatorLineHeight))
+    let imeLine = IndicatorLineView(frame: NSRect(x: 0, y: 0, width: Theme.Layout.fullWidth, height: Theme.Layout.indicatorLineHeight))
     /// Watches the selected keyboard input source.
     let imeWatcher = InputSourceWatcher()
     /// Called whenever the selected input source changes, so the status menu can follow.

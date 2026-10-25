@@ -63,6 +63,12 @@ extension TouchBarController {
         // the bottom 2 pt while the 24 pt chips are centred above it, so the two
         // never overlap and the z-order is irrelevant.
         imeLine.wantsLayer = true
+        // One-time configuration of the reused layer. The gradient runs left to
+        // right; a nil color list draws nothing, which lets a solid colour show
+        // through via the layer's backgroundColor.
+        imeLine.gradientLayer.startPoint = CGPoint(x: 0, y: 0.5)
+        imeLine.gradientLayer.endPoint = CGPoint(x: 1, y: 0.5)
+        imeLine.gradientLayer.masksToBounds = true
         imeLine.isHidden = true
         imeLine.translatesAutoresizingMaskIntoConstraints = true
         container.addSubview(imeLine)
