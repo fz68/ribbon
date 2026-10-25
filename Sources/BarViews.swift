@@ -97,7 +97,7 @@ final class ChipView: NSView {
         addSubview(button)
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.edgeInset),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.chipInset),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             button.leadingAnchor.constraint(equalTo: leadingAnchor),
             button.trailingAnchor.constraint(equalTo: trailingAnchor),

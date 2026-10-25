@@ -5,7 +5,7 @@ extension TouchBarController {
 
     /// Logs the measured layout once after a presentation.
     func scheduleLayoutDump() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.settle) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.layoutDump) { [weak self] in
             self?.dumpLayout()
         }
     }
@@ -69,7 +69,7 @@ extension TouchBarController {
         mediaStack.addArrangedSubview(mediaPlayPauseButton)
         mediaStack.addArrangedSubview(mediaNextButton)
         NSLayoutConstraint.activate([
-            mediaStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Theme.Layout.edgeInset),
+            mediaStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Theme.Layout.barMargin),
             mediaStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
 
@@ -80,8 +80,8 @@ extension TouchBarController {
         leftStack.spacing = Theme.Layout.tightSpacing
         leftStack.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(leftStack)
-        let leadingToMedia = leftStack.leadingAnchor.constraint(equalTo: mediaStack.trailingAnchor, constant: Theme.Layout.edgeInset)
-        let leadingToContainer = leftStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Theme.Layout.edgeInset)
+        let leadingToMedia = leftStack.leadingAnchor.constraint(equalTo: mediaStack.trailingAnchor, constant: Theme.Layout.clusterGap)
+        let leadingToContainer = leftStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Theme.Layout.barMargin)
         leadingToMedia.isActive = true
         leadingToContainer.isActive = false
         leftStackLeadingToMedia = leadingToMedia
@@ -110,18 +110,18 @@ extension TouchBarController {
         rightStack.setContentHuggingPriority(.required, for: .horizontal)
         container.addSubview(rightStack)
         NSLayoutConstraint.activate([
-            rightStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Theme.Layout.edgeInset),
+            rightStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Theme.Layout.barMargin),
             rightStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
 
         // The app label yields before it can reach the right cluster.
-        let appLabelTrailing = frontAppLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -Theme.Layout.edgeInset)
+        let appLabelTrailing = frontAppLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -Theme.Layout.clusterGap)
         appLabelTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
         let zeroWidth = frontAppLabel.widthAnchor.constraint(equalToConstant: 0)
         zeroWidth.isActive = false
         appLabelZeroWidth = zeroWidth
         NSLayoutConstraint.activate([
-            frontAppLabel.leadingAnchor.constraint(equalTo: leftStack.trailingAnchor, constant: Theme.Layout.edgeInset),
+            frontAppLabel.leadingAnchor.constraint(equalTo: leftStack.trailingAnchor, constant: Theme.Layout.clusterGap),
             frontAppLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             frontAppLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.appLabelMaxWidth),
             appLabelTrailing,

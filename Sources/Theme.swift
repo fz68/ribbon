@@ -34,8 +34,14 @@ enum Theme {
         static let indicatorLineHeight: CGFloat = 2
         /// Corner radius shared by the control buttons and the chips.
         static let cornerRadius: CGFloat = 6
-        /// Inset of the first and last cluster from the bar edges.
-        static let edgeInset: CGFloat = 8
+        // The three constants below share the value 8 today, but they are
+        // independent: do not merge them back into one constant.
+        /// Inset of the bar from the container's leading and trailing edge.
+        static let barMargin: CGFloat = 8
+        /// Horizontal gap between two adjacent clusters.
+        static let clusterGap: CGFloat = 8
+        /// Padding between a chip's own leading edge and its content stack.
+        static let chipInset: CGFloat = 8
         /// Spacing inside the media row and the chip row.
         static let tightSpacing: CGFloat = 4
         /// Spacing inside the right cluster.
@@ -68,8 +74,12 @@ enum Theme {
         static let refreshDebounce: TimeInterval = 0.05
         /// Confirmation refresh after a workspace chip is tapped.
         static let chipConfirmation: TimeInterval = 0.15
-        /// Settle time before a re-present or a layout dump.
-        static let settle: TimeInterval = 0.3
+        /// Delay from launch before the first presentation.
+        static let initialPresent: TimeInterval = 0.3
+        /// Delay before re-presenting after a Control Strip mode toggle.
+        static let controlStripRePresent: TimeInterval = 0.3
+        /// Delay before the one-shot layout diagnostic dump.
+        static let layoutDump: TimeInterval = 0.3
         /// Wait before re-reading the frontmost app after presenting.
         static let frontAppRefresh: TimeInterval = 0.5
         /// Wait before re-presenting after a wake.

@@ -35,7 +35,7 @@ extension TouchBarController {
         log(next ? "control strip on" : "control strip off")
         onControlStripStateChanged?(next)
         dismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.settle) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.controlStripRePresent) { [weak self] in
             self?.present()
         }
     }

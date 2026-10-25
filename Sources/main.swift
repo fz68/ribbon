@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.rebuildIMEColorMenu()
         }
         updateControlStripItemTitle(visible: controller.controlStripVisible)
-        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.settle) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.initialPresent) { [weak self] in
             self?.controller.present()
         }
     }
