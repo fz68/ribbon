@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.rebuildIMEColorMenu()
         }
         updateControlStripItemTitle(visible: controller.controlStripVisible)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.settle) { [weak self] in
             self?.controller.present()
         }
     }
@@ -114,7 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// One entry of the colour submenu.
-    private func makeColourChoice(title: String, source: (id: String, name: String),
+    private func makeColourChoice(title: String, source: InputSourceDescriptor,
                                   line: Bool, colour: String?, rainbow: Bool) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: #selector(setIMEAppearance(_:)), keyEquivalent: "")
         item.target = self

@@ -201,7 +201,7 @@ nor distributed through the App Store.
 - AeroSpace has no window-closed event, so closing a background window can leave its icon visible
   until the next event or the 30 s refresh.
 - The full-width layout assumes the 13-inch panel: the app requests 1004 pt and the system grants
-  996 pt. Strip mode uses 684 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
+  996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and
   re-presenting from the menu usually restores it.
 - The build targets Apple silicon only (`-target arm64-apple-macosx13.0`); the Intel Touch Bar

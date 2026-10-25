@@ -48,50 +48,68 @@ enum InputSource {
     }
 
     /// Where the per source configuration is stored.
-    static let configurationPath = (NSString(string: "~/Library/Application Support/Ribbon/ime.json") as NSString).expandingTildeInPath
+    ///
+    /// Assigning a new path drops the cached configuration, so a redirected path
+    /// is picked up by the next read.
+    static var configurationPath: String {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return storedConfigurationPath
+        }
+        set {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            storedConfigurationPath = newValue
+            store.invalidate()
+        }
+    }
+
+    /// The default location of the configuration file.
+    private static var storedConfigurationPath = (NSString(string: "~/Library/Application Support/Ribbon/ime.json") as NSString).expandingTildeInPath
 
     /// Where the per source configuration lived before the app was renamed. It is
     /// only read once, to carry an existing configuration over to the new path.
     private static let legacyConfigurationPath = (NSString(string: "~/Library/Application Support/TouchBarBar/ime.json") as NSString).expandingTildeInPath
 
     private static let stateLock = NSRecursiveLock()
-    private static var cachedConfiguration: Configuration?
+    /// Guards `cachedBuiltInConfiguration` only. It is a leaf lock: never acquire
+    /// `stateLock` while holding it. That keeps the config store's `fallback()` call
+    /// (which runs under the store lock) from inverting against `stateLock`.
+    private static let builtInLock = NSLock()
+    private static var cachedBuiltInConfiguration: Configuration?
+    /// Set by the first `migrateLegacyConfigurationIfNeeded()` call, so the
+    /// legacy file is looked for once per process rather than once per read.
+    private static var didMigrateLegacyConfiguration = false
+
+    /// The generic store behind the configuration file. The built-in defaults
+    /// are rebuilt from the live source list, so a newly installed IME gets an
+    /// entry of its own.
+    private static let store = JSONConfigStore<Configuration>(
+        path: { configurationPath },
+        fallback: { builtInConfiguration() },
+        malformed: .overwriteWithDefault,
+        label: "ime config"
+    )
 
     /// The configuration in use. It is read from disk once and then kept in
     /// memory. A missing or malformed file falls back to the built-in defaults.
     static func configuration() -> Configuration {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        if let cached = cachedConfiguration { return cached }
-        let loaded = loadOrCreateConfiguration()
-        cachedConfiguration = loaded
-        return loaded
-    }
-
-    /// Reads the configuration file, writing the built-in defaults when the file
-    /// is missing and falling back to them when the file cannot be parsed.
-    private static func loadOrCreateConfiguration() -> Configuration {
         migrateLegacyConfigurationIfNeeded()
-        let url = URL(fileURLWithPath: configurationPath)
-        guard let data = try? Data(contentsOf: url) else {
-            let fresh = builtInConfiguration()
-            writeConfiguration(fresh)
-            log("ime config created at \(configurationPath)")
-            return fresh
-        }
-        do {
-            return try JSONDecoder().decode(Configuration.self, from: data)
-        } catch {
-            log("ime config malformed (\(error)), using built-in defaults")
-            let fresh = builtInConfiguration()
-            writeConfiguration(fresh)
-            return fresh
-        }
+        return store.load()
     }
 
     /// Copies the configuration of the pre-rename app to the current path once.
     /// A file that already exists at the current path is never overwritten.
+    ///
+    /// The store caches the configuration, so the old code only migrated on the
+    /// first uncached load. This one-shot flag keeps that behaviour instead of
+    /// checking the file system on every appearance lookup.
     private static func migrateLegacyConfigurationIfNeeded() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard !didMigrateLegacyConfiguration else { return }
+        didMigrateLegacyConfiguration = true
         let fileManager = FileManager.default
         guard !fileManager.fileExists(atPath: configurationPath),
               fileManager.fileExists(atPath: legacyConfigurationPath) else { return }
@@ -111,43 +129,41 @@ enum InputSource {
     static func setAppearance(id: String, name: String, show: Bool, color: String?, rainbow: Bool) -> Bool {
         stateLock.lock()
         defer { stateLock.unlock() }
-        var configuration = cachedConfiguration ?? loadOrCreateConfiguration()
-        let previous = configuration.sources[id]
-        configuration.sources[id] = Entry(
+        var config = configuration()
+        let previous = config.sources[id]
+        config.sources[id] = Entry(
             name: name,
             line: show,
             color: color ?? previous?.color ?? "#4FA3FF",
             rainbow: rainbow
         )
-        cachedConfiguration = configuration
-        return writeConfiguration(configuration)
-    }
-
-    /// Writes the configuration to disk, creating the directory when needed.
-    @discardableResult
-    private static func writeConfiguration(_ configuration: Configuration) -> Bool {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(configuration) else {
-            log("ime config encode failed")
-            return false
-        }
-        let url = URL(fileURLWithPath: configurationPath)
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
-            return true
-        } catch {
-            log("ime config write failed: \(error)")
-            return false
-        }
+        return store.save(config)
     }
 
     /// The configuration used before the user customises anything: a plain
     /// keyboard layout shows no line, the Doubao IME gets the rainbow and every
     /// other enabled source gets its own colour so two IMEs never share one.
+    ///
+    /// The result is cached, because it is read on every appearance lookup.
     static func builtInConfiguration() -> Configuration {
+        builtInLock.lock()
+        defer { builtInLock.unlock() }
+        if let cached = cachedBuiltInConfiguration { return cached }
+        let live = liveBuiltInConfiguration()
+        cachedBuiltInConfiguration = live
+        return live
+    }
+
+    /// Drops the cached built-in configuration, so the next read sees the input
+    /// sources the system reports right now.
+    static func invalidateBuiltInCache() {
+        builtInLock.lock()
+        defer { builtInLock.unlock() }
+        cachedBuiltInConfiguration = nil
+    }
+
+    /// The built-in configuration computed from the sources the system lists now.
+    private static func liveBuiltInConfiguration() -> Configuration {
         let fallback = Entry(name: nil, line: true, color: "#4FA3FF", rainbow: false)
         var configuration = Configuration(default: fallback, sources: [:])
         // Sources that share a localized name are one IME seen through two ids
@@ -181,17 +197,11 @@ enum InputSource {
     // MARK: - Detection
 
     /// The selected keyboard input source, or nil when the system reports none.
-    static var current: (id: String, name: String)? {
+    static var current: InputSourceDescriptor? {
         guard let source = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue() else { return nil }
         guard let id = stringProperty(source, kTISPropertyInputSourceID) else { return nil }
         let name = stringProperty(source, kTISPropertyLocalizedName) ?? id
-        return (id: id, name: name)
-    }
-
-    /// True when the selected source is a plain keyboard layout (ABC, U.S., ...).
-    static var isPlainKeyboardLayout: Bool {
-        guard let id = current?.id else { return false }
-        return isPlainKeyboardLayout(id: id)
+        return InputSourceDescriptor(id: id, name: name)
     }
 
     /// True when the id belongs to a plain keyboard layout.
@@ -206,27 +216,27 @@ enum InputSource {
     }
 
     /// Every enabled input source, in the order the system lists them.
-    static var enabledSources: [(id: String, name: String)] {
+    static var enabledSources: [InputSourceDescriptor] {
         guard let list = TISCreateInputSourceList(nil, true)?.takeRetainedValue() as? [TISInputSource] else {
             return []
         }
-        var result: [(id: String, name: String)] = []
+        var result: [InputSourceDescriptor] = []
         for source in list {
             guard boolProperty(source, kTISPropertyInputSourceIsEnabled) else { continue }
             guard let id = stringProperty(source, kTISPropertyInputSourceID) else { continue }
             let name = stringProperty(source, kTISPropertyLocalizedName) ?? id
-            result.append((id: id, name: name))
+            result.append(InputSourceDescriptor(id: id, name: name))
         }
         return result
     }
 
     /// What the bar should draw for a source: the plain keyboard layouts stay
     /// without a line, every other source follows its configured entry.
-    static func appearance(for id: String) -> (show: Bool, color: NSColor?, rainbow: Bool) {
+    static func appearance(for id: String) -> InputSourceAppearance {
         let configuration = configuration()
         let entry = configuration.sources[id] ?? fallbackEntry(for: id, configuration: configuration)
         let show = entry.line && !isPlainKeyboardLayout(id: id)
-        return (show: show, color: NSColor(hex: entry.color), rainbow: entry.rainbow)
+        return InputSourceAppearance(show: show, color: NSColor(hex: entry.color), rainbow: entry.rainbow)
     }
 
     /// The entry used for a source that has none of its own. A newly installed
@@ -236,9 +246,6 @@ enum InputSource {
         if let entry = live.sources[id] { return entry }
         if isPlainKeyboardLayout(id: id) {
             return Entry(name: nil, line: false, color: configuration.default.color, rainbow: false)
-        }
-        if isDoubao(id: id, name: id) {
-            return Entry(name: nil, line: true, color: configuration.default.color, rainbow: true)
         }
         return configuration.default
     }
@@ -269,7 +276,7 @@ final class InputSourceWatcher {
     var onChange: ((_ id: String, _ name: String) -> Void)?
 
     private var lastID: String?
-    private var pendingChange: (id: String, name: String)?
+    private var pendingChange: InputSourceDescriptor?
     private var pollTimer: Timer?
     private var lastNotificationAt: Date?
     private var loggedNotificationDelivered = false
@@ -357,6 +364,9 @@ final class InputSourceWatcher {
             loggedNotificationMissing = true
             log("ime notification unusable, 1s poll in use")
         }
+        // The source list may have changed with the selection, so the built-in
+        // configuration has to be rebuilt to see a newly installed IME.
+        InputSource.invalidateBuiltInCache()
         onChange?(current.id, current.name)
     }
 }

@@ -1,35 +1,23 @@
 import Foundation
-
-struct Workspace: Equatable {
-    let name: String
-    let isFocused: Bool
-    let apps: [String]
-}
+import Darwin
 
 enum AeroSpace {
-    private static let candidatePaths = ["/opt/homebrew/bin/aerospace", "/usr/local/bin/aerospace"]
+    /// The most app icons one workspace chip shows.
+    static let maxAppsPerWorkspace = 3
+
     private static let queue = DispatchQueue(label: "local.ribbon.aerospace")
     private static let errorLock = NSLock()
 
-    private static let binary: String? = candidatePaths.first {
-        FileManager.default.isExecutableFile(atPath: $0)
-    }
+    /// The AeroSpace CLI. Only the two Homebrew prefixes are searched, never
+    /// `$PATH`, so the app always drives the install the user set up.
+    private static let binary: String? = ToolLocator.find("aerospace", searchPATH: false)
 
     // Feature probe: `subscribe --help` exits 0 on versions that support events.
+    // A launch failure and a timeout both mean "no subscribe".
     private static let hasSubscribe: Bool = {
         guard let binary else { return false }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = ["subscribe", "--help"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return false
-        }
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        let result = ProcessRunner.run(binary, ["subscribe", "--help"], timeout: 3)
+        return result.launchError == nil && !result.timedOut && result.status == 0
     }()
 
     private static var lastChange: (() -> Void)?
@@ -59,7 +47,7 @@ enum AeroSpace {
 
     /// Parses the `name|isFocused` lines produced by
     /// `list-workspaces --all --format '%{workspace}|%{workspace-is-focused}'`.
-    private static func workspaceEntries(_ data: Data) -> [(name: String, isFocused: Bool)] {
+    static func workspaceEntries(_ data: Data) -> [(name: String, isFocused: Bool)] {
         var entries: [(name: String, isFocused: Bool)] = []
         for line in lines(data) {
             guard let separator = line.firstIndex(of: "|") else { continue }
@@ -86,16 +74,24 @@ enum AeroSpace {
             guard !workspace.isEmpty, !app.isEmpty else { continue }
             result[workspace, default: []].insert(app)
         }
-        return result.mapValues { Array($0.sorted().prefix(3)) }
+        return result.mapValues { Array($0.sorted().prefix(maxAppsPerWorkspace)) }
     }
 
-    static func focus(_ name: String) {
+    /// Focuses a workspace.
+    ///
+    /// The completion runs on the main queue and reports whether the command
+    /// succeeded, so the caller can undo an optimistic highlight.
+    static func focus(_ name: String, completion: ((Bool) -> Void)? = nil) {
         queue.async {
             guard let binary else {
                 logThrottled("aerospace binary not found")
+                DispatchQueue.main.async { completion?(false) }
                 return
             }
-            _ = run(binary, ["workspace", name])
+            // `run` returns nil when the command timed out, failed to start or
+            // exited with a non-zero status.
+            let succeeded = run(binary, ["workspace", name]) != nil
+            DispatchQueue.main.async { completion?(succeeded) }
         }
     }
 
@@ -222,37 +218,54 @@ enum AeroSpace {
 
     private static func terminateChild() {
         guard let process = child else { return }
+        // The pid is captured before the child is detached from the state: it is
+        // the only handle left once `child` is cleared.
+        let pid = process.processIdentifier
+        // Clearing the state first makes the termination handler's
+        // `child === finished` guard fail, so a child we killed on purpose
+        // never schedules a restart.
         child = nil
         childPipe?.fileHandleForReading.readabilityHandler = nil
         childPipe = nil
+
         if process.isRunning {
             process.terminate()
+        }
+
+        // Reap the child, otherwise it stays a zombie until the app exits.
+        // The wait runs on a background queue and is bounded, so the AeroSpace
+        // queue is never held for more than a few seconds.
+        let reaped = DispatchGroup()
+        reaped.enter()
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            reaped.leave()
+        }
+        if reaped.wait(timeout: .now() + 2) == .timedOut {
+            // SIGTERM was ignored: escalate so the child cannot outlive us.
+            _ = kill(pid, SIGKILL)
+            _ = reaped.wait(timeout: .now() + 2)
         }
     }
 
     private static func run(_ binary: String, _ arguments: [String]) -> Data? {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: binary)
-        process.arguments = arguments
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
+        let result = ProcessRunner.run(binary, arguments, timeout: 5)
+        if result.timedOut {
+            logThrottled("aerospace \(arguments.joined(separator: " ")) timed out")
+            return nil
+        }
+        if let error = result.launchError {
             logThrottled("aerospace \(arguments.joined(separator: " ")) failed: \(error)")
             return nil
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            logThrottled("aerospace \(arguments.joined(separator: " ")) exited \(process.terminationStatus)")
+        guard result.status == 0 else {
+            logThrottled("aerospace \(arguments.joined(separator: " ")) exited \(result.status)")
             return nil
         }
-        return data
+        return result.stdout
     }
 
-    private static func lines(_ data: Data) -> [String] {
+    static func lines(_ data: Data) -> [String] {
         guard let text = String(data: data, encoding: .utf8) else { return [] }
         return text
             .split(whereSeparator: \.isNewline)

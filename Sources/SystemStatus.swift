@@ -53,21 +53,10 @@ enum Volume {
         set volume output volume v
         return v
         """
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
-        let output = Pipe()
-        task.standardOutput = output
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-        } catch {
-            return nil
-        }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0,
-              let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+        let result = ProcessRunner.run("/usr/bin/osascript", ["-e", script], timeout: 5)
+        guard !result.timedOut,
+              result.status == 0,
+              let text = String(data: result.stdout, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
               let value = Int(text) else { return nil }
         return min(max(value, 0), 100)
     }
@@ -76,25 +65,18 @@ enum Volume {
 /// Battery percentage and charging state from `pmset -g batt`.
 enum Battery {
     /// Returns the battery percentage and whether the battery is charging, or nil on failure.
-    static func status() -> (percent: Int, charging: Bool)? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
-        task.arguments = ["-g", "batt"]
-        let output = Pipe()
-        task.standardOutput = output
-        task.standardError = FileHandle.nullDevice
-        do {
-            try task.run()
-        } catch {
-            return nil
-        }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0,
-              let text = String(data: data, encoding: .utf8),
+    static func status() -> BatteryState? {
+        let result = ProcessRunner.run("/usr/bin/pmset", ["-g", "batt"], timeout: 5)
+        guard !result.timedOut,
+              result.status == 0,
+              let text = String(data: result.stdout, encoding: .utf8),
               let range = text.range(of: "[0-9]{1,3}%", options: .regularExpression),
               let percent = Int(text[range].dropLast()) else { return nil }
+        return BatteryState(percent: percent, charging: isCharging(text))
+    }
 
+    /// True when the `pmset` output says the battery is charging.
+    static func isCharging(_ text: String) -> Bool {
         // Compare whole words so "discharging" and "charged" never count as "charging",
         // and "not charging" is not treated as charging either.
         let words = text.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init)
@@ -104,7 +86,7 @@ enum Battery {
                 charging = true
             }
         }
-        return (percent, charging)
+        return charging
     }
 }
 
@@ -142,15 +124,42 @@ struct ClockConfiguration: Codable {
 /// come from `~/Library/Application Support/Ribbon/clock.json`.
 enum TimeFormat {
     /// Where the clock configuration is stored.
-    static let configurationPath = (NSString(string: "~/Library/Application Support/Ribbon/clock.json") as NSString).expandingTildeInPath
+    ///
+    /// Assigning a new path drops the cached configuration and the cached
+    /// formatter, so a redirected path is picked up by the next read.
+    static var configurationPath: String {
+        get {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return storedConfigurationPath
+        }
+        set {
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            storedConfigurationPath = newValue
+            store.invalidate()
+            cachedFormatter = nil
+        }
+    }
+
+    /// The default location of the clock configuration file.
+    private static var storedConfigurationPath = (NSString(string: "~/Library/Application Support/Ribbon/clock.json") as NSString).expandingTildeInPath
 
     /// Weekday names used when the locale emits the full form ("星期六") instead of "周六".
     /// They only apply to the built-in pattern, never to a custom one.
     private static let weekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
 
     private static let stateLock = NSRecursiveLock()
-    private static var cachedConfiguration: ClockConfiguration?
     private static var cachedFormatter: DateFormatter?
+
+    /// The generic store behind the configuration file. A file that does not
+    /// decode is left alone, so a hand edit is never overwritten.
+    private static let store = JSONConfigStore<ClockConfiguration>(
+        path: { configurationPath },
+        fallback: { ClockConfiguration() },
+        malformed: .keepFile,
+        label: "clock config"
+    )
 
     static func string(from date: Date = Date()) -> String {
         let (configuration, formatter) = activeRenderer()
@@ -158,6 +167,11 @@ enum TimeFormat {
         // The 星期 -> 周X remap is part of the built-in shape. A custom pattern is
         // rendered verbatim, so "EEEE" may legitimately produce 星期六.
         guard configuration.format == ClockConfiguration.builtInFormat else { return text }
+        return abbreviateWeekday(text, date: date)
+    }
+
+    /// Remaps the full weekday form ("星期六") onto the short one ("周六").
+    static func abbreviateWeekday(_ text: String, date: Date) -> String {
         // zh_CN abbreviates the weekday ("周六"). Should a locale or ICU build emit the
         // full form ("星期六"), fall back to the manual map so the shape stays exact.
         guard text.contains("星期") else { return text }
@@ -178,8 +192,7 @@ enum TimeFormat {
         stateLock.lock()
         defer { stateLock.unlock() }
         let configuration = ClockConfiguration(format: format, locale: locale)
-        writeConfiguration(configuration)
-        cachedConfiguration = configuration
+        store.save(configuration)
         cachedFormatter = makeFormatter(configuration)
         log("clock config updated format=\(configuration.format) locale=\(configuration.locale)")
     }
@@ -191,81 +204,36 @@ enum TimeFormat {
     }
 
     /// Re-reads the file for the status menu "Refresh" item, then rebuilds the
-    /// formatter. It never creates or rewrites the file, so a missing or broken
-    /// file simply means the built-in defaults are used.
+    /// formatter. A malformed file is left untouched and the built-in defaults
+    /// are used in memory until the next format is picked. A missing file is not
+    /// created; the built-in defaults are used in memory alone.
     static func reload() {
         stateLock.lock()
         defer { stateLock.unlock() }
-        let configuration = decodeConfiguration() ?? ClockConfiguration()
-        cachedConfiguration = configuration
+        store.invalidate()
+        cachedFormatter = nil
+        let configuration = store.loadExisting()
         cachedFormatter = makeFormatter(configuration)
         log("clock config reloaded format=\(configuration.format) locale=\(configuration.locale)")
     }
 
-    /// The configuration and formatter in use. They are read from disk once and
-    /// then kept in memory.
+    /// The configuration and formatter in use. The store keeps the configuration
+    /// in memory; the formatter is rebuilt whenever it was invalidated.
     private static func activeRenderer() -> (configuration: ClockConfiguration, formatter: DateFormatter) {
         stateLock.lock()
         defer { stateLock.unlock() }
-        if let configuration = cachedConfiguration, let formatter = cachedFormatter {
+        let configuration = store.load()
+        if let formatter = cachedFormatter {
             return (configuration, formatter)
         }
-        let configuration = loadOrCreateConfiguration()
         let formatter = makeFormatter(configuration)
-        cachedConfiguration = configuration
         cachedFormatter = formatter
         return (configuration, formatter)
     }
 
-    /// Reads the configuration file, writing the built-in defaults when the file
-    /// is missing. A malformed file is logged and left untouched.
-    private static func loadOrCreateConfiguration() -> ClockConfiguration {
-        let exists = FileManager.default.fileExists(atPath: configurationPath)
-        if let loaded = decodeConfiguration() { return loaded }
-        let fresh = ClockConfiguration()
-        guard !exists else { return fresh }
-        writeConfiguration(fresh)
-        log("clock config created at \(configurationPath)")
-        return fresh
-    }
-
-    /// Decodes the file, logging a malformed file and returning nil when no
-    /// usable configuration can be read.
-    private static func decodeConfiguration() -> ClockConfiguration? {
-        let url = URL(fileURLWithPath: configurationPath)
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        do {
-            return try JSONDecoder().decode(ClockConfiguration.self, from: data)
-        } catch {
-            log("clock config malformed (\(error)), using built-in defaults")
-            return nil
-        }
-    }
-
-    /// Writes the configuration to disk, creating the directory when needed.
-    @discardableResult
-    private static func writeConfiguration(_ configuration: ClockConfiguration) -> Bool {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(configuration) else {
-            log("clock config encode failed")
-            return false
-        }
-        let url = URL(fileURLWithPath: configurationPath)
-        do {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
-                                                    withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
-            return true
-        } catch {
-            log("clock config write failed: \(error)")
-            return false
-        }
-    }
-
     /// Builds the formatter for a configuration. The locale is set before the
     /// pattern so a locale-dependent token is resolved with the right locale.
-    private static func makeFormatter(_ configuration: ClockConfiguration) -> DateFormatter {
+    static func makeFormatter(_ configuration: ClockConfiguration) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: configuration.locale)
         formatter.dateFormat = configuration.format
