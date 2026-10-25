@@ -47,7 +47,17 @@ extension TouchBarController {
     func setupContainer() {
         container.wantsLayer = true
         container.layer?.masksToBounds = true
+        setupIndicatorLine()
+        setupMediaStack()
+        setupChipRow()
+        setupAppLabel()
+        setupRightCluster()
+        // The app label is pinned to the chip row on one side and the right
+        // cluster on the other, so both have to exist before it is constrained.
+        constrainAppLabel()
+    }
 
+    private func setupIndicatorLine() {
         // The IME indicator: a 2 pt line along the very bottom edge of the bar.
         // It is added first, so it sits behind the chips. That is fine: it occupies
         // the bottom 2 pt while the 24 pt chips are centred above it, so the two
@@ -58,7 +68,9 @@ extension TouchBarController {
         container.addSubview(imeLine)
         container.bottomLine = imeLine
         imeLine.frame = NSRect(x: 0, y: 0, width: container.bounds.width, height: Theme.Layout.indicatorLineHeight)
+    }
 
+    private func setupMediaStack() {
         // Far left: the media transport buttons.
         mediaStack.orientation = .horizontal
         mediaStack.alignment = .centerY
@@ -72,7 +84,9 @@ extension TouchBarController {
             mediaStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: Theme.Layout.barMargin),
             mediaStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
+    }
 
+    private func setupChipRow() {
         // Left: the workspace chip row. It sits right of the media buttons in full mode
         // and moves back to the container edge when the Control Strip hides the media stack.
         leftStack.orientation = .horizontal
@@ -89,7 +103,9 @@ extension TouchBarController {
         NSLayoutConstraint.activate([
             leftStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
+    }
 
+    private func setupAppLabel() {
         // Current app name: immediately right of the last workspace chip.
         frontAppLabel.font = NSFont.systemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
         frontAppLabel.textColor = NSColor(argb: Theme.primaryText)
@@ -100,7 +116,9 @@ extension TouchBarController {
         frontAppLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         frontAppLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         container.addSubview(frontAppLabel)
+    }
 
+    private func setupRightCluster() {
         // Right: brightness, volume, battery and clock.
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
@@ -112,19 +130,6 @@ extension TouchBarController {
         NSLayoutConstraint.activate([
             rightStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -Theme.Layout.barMargin),
             rightStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-        ])
-
-        // The app label yields before it can reach the right cluster.
-        let appLabelTrailing = frontAppLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -Theme.Layout.clusterGap)
-        appLabelTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
-        let zeroWidth = frontAppLabel.widthAnchor.constraint(equalToConstant: 0)
-        zeroWidth.isActive = false
-        appLabelZeroWidth = zeroWidth
-        NSLayoutConstraint.activate([
-            frontAppLabel.leadingAnchor.constraint(equalTo: leftStack.trailingAnchor, constant: Theme.Layout.clusterGap),
-            frontAppLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            frontAppLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.appLabelMaxWidth),
-            appLabelTrailing,
         ])
 
         batteryLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
@@ -152,6 +157,21 @@ extension TouchBarController {
         rightStack.addArrangedSubview(batteryStack)
         rightStack.addArrangedSubview(timeLabel)
         rightStack.addArrangedSubview(controlStripButton)
+    }
+
+    private func constrainAppLabel() {
+        // The app label yields before it can reach the right cluster.
+        let appLabelTrailing = frontAppLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -Theme.Layout.clusterGap)
+        appLabelTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
+        let zeroWidth = frontAppLabel.widthAnchor.constraint(equalToConstant: 0)
+        zeroWidth.isActive = false
+        appLabelZeroWidth = zeroWidth
+        NSLayoutConstraint.activate([
+            frontAppLabel.leadingAnchor.constraint(equalTo: leftStack.trailingAnchor, constant: Theme.Layout.clusterGap),
+            frontAppLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            frontAppLabel.widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.appLabelMaxWidth),
+            appLabelTrailing,
+        ])
     }
 
     func makeControlButton(symbol: String, tooltip: String, action: Selector) -> NSButton {
