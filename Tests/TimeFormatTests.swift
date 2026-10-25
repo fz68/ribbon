@@ -1,6 +1,6 @@
 import Foundation
 
-/// Mirrors the private weekday table in `Sources/SystemStatus.swift`. The test
+/// Mirrors the private weekday table in `Sources/ClockFormat.swift`. The test
 /// derives the expected day name from `Calendar.current` instead of hardcoding
 /// one, so it stays correct in any time zone and on any calendar.
 private let expectedWeekdayNames = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
