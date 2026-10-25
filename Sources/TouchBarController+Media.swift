@@ -43,15 +43,9 @@ extension TouchBarController {
         }
     }
 
-    /// Media poll interval: 30 s normally, 120 s once the last two polls found
-    /// no media session at all.
-    var mediaPollInterval: TimeInterval {
-        mediaMissCount >= Theme.Timing.mediaMissThreshold ? Theme.Timing.mediaIdlePoll : Theme.Timing.mediaPoll
-    }
-
     /// Updates the backoff counter and schedules the next poll.
     func finishMediaPoll(available: Bool) {
-        mediaMissCount = available ? 0 : mediaMissCount + 1
+        mediaPoll = mediaPoll.recording(available: available)
         scheduleMediaPoll()
     }
 
@@ -59,7 +53,7 @@ extension TouchBarController {
     func scheduleMediaPoll() {
         mediaTimer?.invalidate()
         guard !didShutdown else { return }
-        let timer = Timer(timeInterval: mediaPollInterval, repeats: false) { [weak self] _ in
+        let timer = Timer(timeInterval: mediaPoll.interval, repeats: false) { [weak self] _ in
             self?.pollMediaState()
         }
         RunLoop.main.add(timer, forMode: .common)

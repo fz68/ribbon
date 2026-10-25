@@ -56,7 +56,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
     let mediaQueue = DispatchQueue(label: "local.ribbon.media")
     var mediaTimer: Timer?
     /// Consecutive polls that found no media session at all.
-    var mediaMissCount = 0
+    var mediaPoll = MediaPollPolicy.initial
     /// nil means "state unknown", which shows the neutral play/pause symbol.
     var mediaIsPlaying: Bool?
     var lastLoggedMediaState: Bool?
