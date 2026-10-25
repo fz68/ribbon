@@ -63,7 +63,7 @@ extension TouchBarController {
             button.isHidden = layout.hidesSystemKeys
         }
 
-        updateControlStripButton()
+        updateControlStripButton(layout)
         container.needsLayout = true
         container.layoutSubtreeIfNeeded()
         // The indicator line follows the width of the bar in both modes.
@@ -71,15 +71,16 @@ extension TouchBarController {
     }
 
     /// Keeps the toggle icon and tooltip in sync with the current mode.
-    func updateControlStripButton() {
+    func updateControlStripButton(_ layout: BarLayout) {
+        let visible = layout == .strip
         let show = Self.stripShowSymbol ?? "switch.2"
         let hide = Self.stripHideSymbol ?? show
-        let symbol = controlStripVisible ? hide : show
+        let symbol = visible ? hide : show
         if let image = SymbolImage.make(symbol, accessibility: "Control Strip", logContext: "Control Strip") {
             controlStripButton.image = image
             controlStripButton.imageScaling = .scaleProportionallyDown
         }
-        let action = controlStripVisible ? "Hide Control Strip" : "Show Control Strip"
+        let action = visible ? "Hide Control Strip" : "Show Control Strip"
         controlStripButton.toolTip = action
         controlStripButton.setAccessibilityLabel(action)
     }
