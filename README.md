@@ -46,6 +46,8 @@ the selected input source.
 ```sh
 make        # build the app bundle at build/Ribbon.app
 make run    # kill a running Ribbon, then open build/Ribbon.app
+make test   # compile and run the test suite
+make lint   # type-check Sources and Tests with -warnings-as-errors
 make dmg    # stage build/dmg and package build/Ribbon-<version>.dmg
 make clean  # remove build/
 ```
@@ -55,6 +57,12 @@ assembles the app bundle and ad-hoc signs it. There is no Xcode project; the bui
 Makefile. `make dmg` additionally stages the bundle and an `Applications` symlink into `build/dmg`,
 then packs it into `build/Ribbon-<version>.dmg` with `hdiutil create -format UDZO`; the version
 comes from `Resources/Info.plist`.
+
+`make test` compiles `Sources/` (without `main.swift`, which holds the entry point) together with
+`Tests/*.swift` into a single module and runs the resulting binary; a non-zero exit fails the
+target. `make lint` type-checks both the app sources and the test sources with
+`-warnings-as-errors`, so any new compiler diagnostic fails the build. CI runs `make lint`,
+`make test` and `make all` on an arm64 macOS runner (`.github/workflows/ci.yml`).
 
 ## Install
 
