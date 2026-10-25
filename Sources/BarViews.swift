@@ -28,15 +28,6 @@ final class BarContainer: NSView {
     /// The 2 pt indicator line along the bottom edge.
     weak var bottomLine: NSView?
 
-    override var frame: NSRect {
-        didSet { updateBottomLine() }
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        updateBottomLine()
-    }
-
     override func layout() {
         super.layout()
         updateBottomLine()

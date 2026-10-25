@@ -102,14 +102,3 @@ enum Theme {
         static let mediaMissThreshold: Int = 2
     }
 }
-
-extension NSColor {
-    convenience init(argb: UInt32) {
-        self.init(
-            srgbRed: CGFloat((argb >> 16) & 0xff) / 255.0,
-            green: CGFloat((argb >> 8) & 0xff) / 255.0,
-            blue: CGFloat(argb & 0xff) / 255.0,
-            alpha: CGFloat((argb >> 24) & 0xff) / 255.0
-        )
-    }
-}

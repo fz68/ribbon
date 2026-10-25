@@ -249,7 +249,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.refreshDebounce, execute: work)
     }
 
-    @objc func handleWake(_ notification: Notification) {
+    @objc private func handleWake(_ notification: Notification) {
         DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.wakeRepresent) { [weak self] in
             guard let self else { return }
             self.dismiss()
@@ -259,11 +259,11 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         }
     }
 
-    @objc func frontAppChanged(_ notification: Notification) {
+    @objc private func frontAppChanged(_ notification: Notification) {
         updateFrontApp(notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
     }
 
-    func updateFrontApp(_ app: NSRunningApplication? = nil) {
+    private func updateFrontApp(_ app: NSRunningApplication? = nil) {
         guard !didShutdown else { return }
         guard let app = app ?? NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
