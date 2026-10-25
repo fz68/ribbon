@@ -9,7 +9,9 @@ BIN_DIR  := $(shell swift build --show-bin-path)
 
 .PHONY: all run clean dmg test lint coverage FORCE
 
-all: $(APP)/Contents/Info.plist $(APP)/Contents/MacOS/Ribbon
+all: $(APP)/Contents/Info.plist $(APP)/Contents/MacOS/Ribbon \
+	$(APP)/Contents/Resources/RibbonTemplate.svg \
+	$(APP)/Contents/Resources/Ribbon.icns
 	codesign --force --sign - $(APP)
 
 # SwiftPM decides what is stale; FORCE just lets the rule run on every make.
@@ -23,6 +25,14 @@ $(APP)/Contents/MacOS/Ribbon: $(BIN)
 $(APP)/Contents/Info.plist: Resources/Info.plist
 	mkdir -p $(dir $@)
 	cp Resources/Info.plist $@
+
+$(APP)/Contents/Resources/RibbonTemplate.svg: Resources/RibbonTemplate.svg
+	mkdir -p $(dir $@)
+	cp Resources/RibbonTemplate.svg $@
+
+$(APP)/Contents/Resources/Ribbon.icns: Resources/RibbonTemplate.svg Tools/make-icons.swift
+	mkdir -p $(dir $@)
+	swift Tools/make-icons.swift Resources/RibbonTemplate.svg $@
 
 # Serialized on purpose: the tests share a process-global log path.
 test:

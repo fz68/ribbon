@@ -23,7 +23,7 @@ the selected input source.
 - Brightness down / up (10% steps) and output volume down / up (5% steps).
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
-  `R > Clock Format` (see Configuration).
+  `menu-bar icon > Clock Format` (see Configuration).
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
@@ -61,6 +61,9 @@ runs `swift build -c release`, copies `.build/release/Ribbon` and `Resources/Inf
 the bundle and an `Applications` symlink into `build/dmg`, then packs it into
 `build/Ribbon-<version>.dmg` with `hdiutil create -format UDZO`; the version comes from
 `Resources/Info.plist`.
+
+The app icon is generated during `make`: `Tools/make-icons.swift` renders
+`Resources/RibbonTemplate.svg` into `Resources/Ribbon.icns` inside the bundle.
 
 `make test` runs `swift test --no-parallel`; the tests are serialized because they share a
 process-global log path, and a non-zero exit fails the target. `make coverage` re-runs them with
@@ -101,8 +104,8 @@ Alternatively let AeroSpace start it:
 after-startup-command = ['exec-and-forget /bin/bash -c "sleep 1; open /Applications/Ribbon.app"']
 ```
 
-Ribbon has no Dock icon. Its menu-bar item `R` offers Re-present, Refresh, Show/Hide Control
-Strip, Set App+ControlStrip mode, IME Color, Clock Format, and Quit.
+Ribbon has no Dock icon. Its menu-bar item shows the Ribbon logo and offers Re-present, Refresh,
+Show/Hide Control Strip, Set App+ControlStrip mode, IME Color, Clock Format, and Quit.
 
 ## Configuration
 
@@ -114,8 +117,9 @@ There are two configuration files: the input source line at
 
 It is created on first launch with a built-in default entry per enabled input source. The file is
 written as pretty-printed JSON with sorted keys. If it cannot be parsed, Ribbon logs the error, falls
-back to the built-in defaults and rewrites the file. Changes made from `R > IME Color` are written
-back to the same file. A source that is not listed falls back to the built-in rule for its kind, and ultimately to `default`.
+back to the built-in defaults and rewrites the file. Changes made from `menu-bar icon > IME Color`
+are written back to the same file. A source that is not listed falls back to the built-in rule for
+its kind, and ultimately to `default`.
 
 Schema:
 
@@ -154,8 +158,8 @@ Notes:
 ### Clock format (`clock.json`)
 
 The clock display is configured at `~/Library/Application Support/Ribbon/clock.json` or picked from
-the status menu via `R > Clock Format`. The file is created on first launch with the built-in
-defaults and written as pretty-printed JSON with sorted keys.
+the status menu via `menu-bar icon > Clock Format`. The file is created on first launch with the
+built-in defaults and written as pretty-printed JSON with sorted keys.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -175,11 +179,12 @@ Notes:
 
 - A malformed file is noted in `~/Library/Logs/ribbon.log` and the built-in defaults are used; the
   file itself is never rewritten or deleted by the app.
-- `R > Clock Format` offers five presets (Chinese default, `MMM d EEE HH:mm`, `yyyy-MM-dd EEE HH:mm`,
-  `HH:mm` and `h:mm a`), each shown with today's date. Picking one writes `clock.json` and repaints
-  the clock at once. A pair that matches no preset is shown as a checked `Custom:` entry.
-- `R > Clock Format > Edit clock.json…` opens the file in the default editor. Hand edits apply after
-  a relaunch, or immediately from `R > Refresh`.
+- `menu-bar icon > Clock Format` offers five presets (Chinese default, `MMM d EEE HH:mm`,
+  `yyyy-MM-dd EEE HH:mm`, `HH:mm` and `h:mm a`), each shown with today's date. Picking one writes
+  `clock.json` and repaints the clock at once. A pair that matches no preset is shown as a checked
+  `Custom:` entry.
+- `menu-bar icon > Clock Format > Edit clock.json…` opens the file in the default editor. Hand
+  edits apply after a relaunch, or immediately from `menu-bar icon > Refresh`.
 - A custom `format` is rendered verbatim. The built-in `星期` -> `周X` abbreviation only applies to
   the default pattern, so `EEEE` with the default locale may produce `星期六`.
 

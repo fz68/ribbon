@@ -39,7 +39,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "R"
+        if let icon = StatusItemIcon.image {
+            item.button?.image = icon
+            item.button?.imagePosition = .imageOnly
+            item.button?.toolTip = "Ribbon"
+        } else {
+            item.button?.title = "R"
+        }
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Re-present", action: #selector(rePresent), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: ""))
