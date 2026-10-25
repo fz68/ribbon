@@ -167,7 +167,7 @@ final class TouchBarController: NSObject, NSTouchBarDelegate {
         logIMESource(prefix: "ime source ->")
 
         // Restore the persisted Control Strip mode before the bar is presented.
-        applyControlStripMode(visible: controlStripVisible)
+        applyControlStripMode(BarLayout(visible: controlStripVisible))
         log("control strip symbols=\(Self.availableStripSymbols.joined(separator: ","))")
 
         pollMediaState()

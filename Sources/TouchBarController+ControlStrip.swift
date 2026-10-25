@@ -31,7 +31,7 @@ extension TouchBarController {
     @objc func toggleControlStrip() {
         let next = !controlStripVisible
         controlStripVisible = next
-        applyControlStripMode(visible: next)
+        applyControlStripMode(BarLayout(visible: next))
         log(next ? "control strip on" : "control strip off")
         onControlStripStateChanged?(next)
         dismiss()
@@ -42,25 +42,25 @@ extension TouchBarController {
 
     /// Applies the layout of one mode. The container keeps a fixed frame, so the width
     /// is changed on the frame instead of adding a width constraint.
-    func applyControlStripMode(visible: Bool) {
-        let width: CGFloat = visible ? Theme.Layout.stripWidth : Theme.Layout.fullWidth
-        container.frame.size = NSSize(width: width, height: container.frame.height)
+    func applyControlStripMode(_ layout: BarLayout) {
+        container.frame.size = NSSize(width: layout.width, height: container.frame.height)
 
         // Strip mode keeps the chips, the battery, the clock and the toggle only.
-        mediaStack.isHidden = visible
-        frontAppLabel.isHidden = visible
-        appLabelZeroWidth?.isActive = visible
+        mediaStack.isHidden = layout.hidesMediaCluster
+        frontAppLabel.isHidden = layout.hidesAppLabel
+        appLabelZeroWidth?.isActive = layout.collapsesAppLabel
         // The old anchor is released before the new one is installed, so the two
         // left edge constraints are never active at the same time.
-        if visible {
-            leftStackLeadingToMedia?.isActive = false
-            leftStackLeadingToContainer?.isActive = true
-        } else {
+        switch layout.chipRowAnchor {
+        case .media:
             leftStackLeadingToContainer?.isActive = false
             leftStackLeadingToMedia?.isActive = true
+        case .container:
+            leftStackLeadingToMedia?.isActive = false
+            leftStackLeadingToContainer?.isActive = true
         }
         for button in [brightnessDownButton, brightnessUpButton, volumeDownButton, volumeUpButton] {
-            button.isHidden = visible
+            button.isHidden = layout.hidesSystemKeys
         }
 
         updateControlStripButton()

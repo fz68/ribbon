@@ -26,6 +26,7 @@ struct TestMain {
         runConfigTests(runner)
         runProcessRunnerTests(runner)
         runLogTests(runner)
+        runBarLayoutTests(runner)
 
         // `finish()` terminates the process, so the cleanup cannot live in a
         // defer block: it has to happen before the summary is printed.
