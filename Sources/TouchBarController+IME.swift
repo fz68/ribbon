@@ -8,15 +8,18 @@ extension TouchBarController {
         updateIMELine()
     }
 
-    /// Updates the indicator line: its width follows the container and its look
-    /// follows the configured entry of the selected source.
+    /// Updates the indicator line: its edge and width follow the container and
+    /// its look follows the configured entry of the selected source.
     func updateIMELine() {
+        // The container owns the geometry, so the line sits on the configured
+        // edge and spans the width the system granted.
+        container.lineOnTop = InputSource.linePosition == .top
+        container.positionLine()
         guard let current = InputSource.current else {
             imeLine.isHidden = true
             return
         }
         let appearance = InputSource.appearance(for: current.id)
-        imeLine.frame = NSRect(x: 0, y: 0, width: container.bounds.width, height: 2)
         imeLine.isHidden = !appearance.show
         if appearance.show {
             applyIMELineStyle(color: appearance.color, rainbow: appearance.rainbow)

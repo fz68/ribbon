@@ -6,6 +6,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controlStripItem: NSMenuItem?
     private var inputSourceItem: NSMenuItem?
     private var imeColorItem: NSMenuItem?
+    private var imeLinePositionItem: NSMenuItem?
     private var clockFormatItem: NSMenuItem?
 
     /// The clock formats offered by the "Clock Format" submenu.
@@ -66,6 +67,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(imeColor)
         imeColorItem = imeColor
 
+        // Which edge of the bar the indicator line is drawn on.
+        let imeLinePosition = NSMenuItem(title: "IME Line Position", action: nil, keyEquivalent: "")
+        imeLinePosition.submenu = NSMenu()
+        menu.addItem(imeLinePosition)
+        imeLinePositionItem = imeLinePosition
+
         // Clock format presets and the config file shortcut.
         let clockFormat = NSMenuItem(title: "Clock Format", action: nil, keyEquivalent: "")
         clockFormat.submenu = NSMenu()
@@ -79,6 +86,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = item
         updateInputSourceItem()
         rebuildIMEColorMenu()
+        rebuildIMELinePositionMenu()
         rebuildClockFormatMenu()
     }
 
@@ -115,6 +123,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 choices.addItem(makeColourChoice(title: entry.name, source: source, line: true, colour: entry.hex, rainbow: false))
             }
             item.submenu = choices
+            submenu.addItem(item)
+        }
+    }
+
+    /// Rebuilds the line position submenu. The checkmark always follows the
+    /// stored configuration, so a hand edited file is shown as it is.
+    private func rebuildIMELinePositionMenu() {
+        guard let submenu = imeLinePositionItem?.submenu else { return }
+        submenu.removeAllItems()
+        for position in [InputSource.LinePosition.top, .bottom] {
+            let title = position == .top ? "Top" : "Bottom"
+            let item = NSMenuItem(title: title, action: #selector(setIMELinePosition(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = position.rawValue
+            item.state = position == InputSource.linePosition ? .on : .off
             submenu.addItem(item)
         }
     }
@@ -191,6 +214,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         TimeFormat.reload()
         rebuildClockFormatMenu()
         controller.refreshClock()
+        // A hand edited ime.json is picked up here, not only on the next launch.
+        InputSource.invalidateConfiguration()
+        controller.refreshInputSourceIndicator()
+        rebuildIMEColorMenu()
+        rebuildIMELinePositionMenu()
         controller.refreshNow()
     }
 
@@ -212,6 +240,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildIMEColorMenu()
         let style = choice.rainbow ? "rainbow" : (choice.line ? (choice.colour ?? "-") : "none")
         log("ime colour \(choice.id) -> \(style)")
+    }
+
+    /// Stores the picked edge and repaints the indicator line at once.
+    @objc private func setIMELinePosition(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let position = InputSource.LinePosition(rawValue: raw) else { return }
+        InputSource.setLinePosition(position)
+        controller.refreshInputSourceIndicator()
+        rebuildIMELinePositionMenu()
+        log("ime line position -> \(position.rawValue)")
     }
 
     /// Stores the picked clock format and repaints the clock at once.

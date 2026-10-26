@@ -21,21 +21,29 @@ extension NSButton {
     }
 }
 
-/// The bar container. It keeps the IME indicator pinned to the very bottom edge
-/// so the line follows the width the system grants (1004 pt full, 680 pt strip)
-/// instead of the width this process asked for.
+/// The bar container. It keeps the IME indicator pinned to the top or bottom
+/// edge of the bar so the line follows the width the system grants (1004 pt
+/// full, 680 pt strip) instead of the width this process asked for.
 final class BarContainer: NSView {
-    /// The 2 pt indicator line along the bottom edge.
-    weak var bottomLine: NSView?
+    /// The 2 pt indicator line along the top or bottom edge.
+    weak var line: NSView?
+
+    /// True when the indicator line sits on the top edge instead of the bottom.
+    var lineOnTop = false
 
     override func layout() {
         super.layout()
-        updateBottomLine()
+        positionLine()
     }
 
-    private func updateBottomLine() {
-        guard let line = bottomLine else { return }
-        line.frame = NSRect(x: 0, y: 0, width: bounds.width, height: line.frame.height)
+    /// Places the indicator line on the configured edge. The height is left
+    /// alone, so the line keeps its 2 pt and only the edge changes.
+    func positionLine() {
+        guard let line = line else { return }
+        line.frame = NSRect(x: 0,
+                            y: lineOnTop ? max(0, bounds.height - line.frame.height) : 0,
+                            width: bounds.width,
+                            height: line.frame.height)
     }
 }
 

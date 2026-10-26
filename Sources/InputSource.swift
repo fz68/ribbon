@@ -39,12 +39,43 @@ enum InputSource {
         var rainbow: Bool
     }
 
+    /// The vertical edge of the bar the indicator line is drawn on.
+    enum LinePosition: String {
+        case top
+        case bottom
+    }
+
     /// The contents of `~/Library/Application Support/Ribbon/ime.json`.
     struct Configuration: Codable {
         /// The fallback used for a source that has no entry of its own.
         var `default`: Entry
         /// The per source entries, keyed by input source id.
         var sources: [String: Entry]
+        /// Which edge the indicator line is drawn on: "top" or "bottom".
+        ///
+        /// Kept as a plain string, so a missing, unknown or wrong-typed value
+        /// falls back to the bottom edge instead of failing the whole file.
+        var linePosition: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case `default`, sources, linePosition
+        }
+
+        // The custom decoder below suppresses the synthesized memberwise
+        // initializer, so it is spelled out here.
+        init(default: Entry, sources: [String: Entry], linePosition: String? = nil) {
+            self.`default` = `default`
+            self.sources = sources
+            self.linePosition = linePosition
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.`default` = try container.decode(Entry.self, forKey: .default)
+            self.sources = try container.decode([String: Entry].self, forKey: .sources)
+            // try? so a wrong type here cannot fail the whole file
+            self.linePosition = try? container.decodeIfPresent(String.self, forKey: .linePosition)
+        }
     }
 
     /// Where the per source configuration is stored.
@@ -87,10 +118,13 @@ enum InputSource {
     /// The generic store behind the configuration file. The built-in defaults
     /// are rebuilt from the live source list, so a newly installed IME gets an
     /// entry of its own.
+    ///
+    /// A malformed file is left untouched, so the user can repair it by hand;
+    /// the app runs on the built-in defaults meanwhile.
     private static let store = JSONConfigStore<Configuration>(
         path: { configurationPath },
         fallback: { builtInConfiguration() },
-        malformed: .overwriteWithDefault,
+        malformed: .keepFile,
         label: "ime config"
     )
 
@@ -126,6 +160,23 @@ enum InputSource {
         }
     }
 
+    /// The edge the indicator line is drawn on. A missing or unknown value
+    /// falls back to the bottom edge, so a hand edited file that names an
+    /// unknown edge still renders the line.
+    static var linePosition: LinePosition {
+        guard let raw = configuration().linePosition else { return .bottom }
+        return LinePosition(rawValue: raw.lowercased()) ?? .bottom
+    }
+
+    /// Drops the cached ime.json, so the next read re-reads the file from disk.
+    /// The manual refresh calls this, so a hand edited file is picked up
+    /// without a relaunch.
+    static func invalidateConfiguration() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        store.invalidate()
+    }
+
     /// Stores the appearance of one source and writes the file back.
     @discardableResult
     static func setAppearance(id: String, name: String, show: Bool, color: String?, rainbow: Bool) -> Bool {
@@ -139,6 +190,16 @@ enum InputSource {
             color: color ?? previous?.color ?? "#4FA3FF",
             rainbow: rainbow
         )
+        return store.save(config)
+    }
+
+    /// Writes the edge the indicator line is drawn on to `ime.json`.
+    @discardableResult
+    static func setLinePosition(_ position: LinePosition) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        var config = configuration()
+        config.linePosition = position.rawValue
         return store.save(config)
     }
 
@@ -168,6 +229,8 @@ enum InputSource {
     private static func liveBuiltInConfiguration() -> Configuration {
         let fallback = Entry(name: nil, line: true, color: "#4FA3FF", rainbow: false)
         var configuration = Configuration(default: fallback, sources: [:])
+        // The line is drawn on the bottom edge until the file says otherwise.
+        configuration.linePosition = "bottom"
         // Sources that share a localized name are one IME seen through two ids
         // (an ASCII variant and a pinyin variant), so they share a colour too.
         var colourByName: [String: String] = [:]

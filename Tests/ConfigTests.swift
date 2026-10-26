@@ -209,6 +209,201 @@ private func decodedSourceEntry(at path: String, id: String) -> [String: Any]? {
         #expect(identical, "every rebuilt source entry matches the cached one")
     }
 
+    @Test func testLinePositionDefaultsToBottom() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        // Assigning the path drops the cached configuration, so the fixture
+        // below is read instead of what an earlier test left behind.
+        InputSource.configurationPath = path
+
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{}}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(FileManager.default.fileExists(atPath: path),
+                "the fixture configuration was written")
+
+        #expect(InputSource.linePosition == .bottom,
+                "a configuration without linePosition draws the line at the bottom")
+
+        let onDisk = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        #expect(onDisk == Data(json.utf8),
+                "reading a file that has no linePosition leaves it byte-identical")
+    }
+
+    @Test func testLinePositionTop() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"top"}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(FileManager.default.fileExists(atPath: path),
+                "the fixture configuration was written")
+
+        #expect(InputSource.linePosition == .top,
+                "a configuration that asks for the top edge draws the line there")
+    }
+
+    @Test func testUnknownLinePositionFallsBackToBottom() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"MIDDLE"}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(FileManager.default.fileExists(atPath: path),
+                "the fixture configuration was written")
+
+        #expect(InputSource.linePosition == .bottom,
+                "an unknown linePosition falls back to the bottom edge")
+
+        // The value is a plain string in the file, so it decodes and the store
+        // never treats the file as malformed and rewrites it.
+        let onDisk = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        #expect(onDisk == Data(json.utf8),
+                "a file with an unknown linePosition is left untouched")
+    }
+
+    @Test func testAppearanceWriteKeepsAnAbsentLinePositionAbsent() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{}}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+
+        #expect(InputSource.setAppearance(id: "com.example.lineposition",
+                                          name: "Line Position IME",
+                                          show: true,
+                                          color: "#123456",
+                                          rainbow: false),
+                "the appearance write reports success")
+
+        let data = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        #expect(object != nil, "the written configuration decodes as JSON")
+        #expect(object?["linePosition"] == nil,
+                "a nil linePosition is omitted by the encoder, so the key is not invented")
+    }
+
+    @Test func testAppearanceWritePreservesLinePosition() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"top"}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+
+        #expect(InputSource.setAppearance(id: "com.example.preserveposition",
+                                          name: "Preserve Position IME",
+                                          show: true,
+                                          color: "#123456",
+                                          rainbow: false),
+                "the appearance write reports success")
+
+        let data = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        #expect(object != nil, "the written configuration decodes as JSON")
+        #expect(object?["linePosition"] as? String == "top",
+                "the write keeps the configured linePosition")
+    }
+
+    @Test func testSetLinePositionWritesTheFile() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"bottom"}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(InputSource.linePosition == .bottom,
+                "the fixture asks for the bottom edge")
+
+        #expect(InputSource.setLinePosition(.top),
+                "the line position write reports success")
+
+        #expect(InputSource.linePosition == .top,
+                "the stored line position is the top edge")
+
+        let data = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        #expect(object != nil, "the written configuration decodes as JSON")
+        #expect(object?["linePosition"] as? String == "top",
+                "the write puts the top edge into the file")
+    }
+
+    @Test func testInvalidateConfigurationRereadsTheFile() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        let bottomJSON = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"bottom"}
+        """
+        try? Data(bottomJSON.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(InputSource.linePosition == .bottom,
+                "the file on disk asks for the bottom edge")
+
+        let topJSON = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"top"}
+        """
+        try? Data(topJSON.utf8).write(to: URL(fileURLWithPath: path))
+        InputSource.invalidateConfiguration()
+        #expect(InputSource.linePosition == .top,
+                "the re-read file asks for the top edge")
+    }
+
+    @Test func testMalformedIMEFileIsNotRewritten() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        // A truncated object: the file cannot be parsed at all.
+        let broken = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":
+        """
+        try? Data(broken.utf8).write(to: URL(fileURLWithPath: path))
+
+        #expect(InputSource.linePosition == .bottom,
+                "a malformed file falls back to the bottom edge")
+        #expect(InputSource.configuration().default.color == "#4FA3FF",
+                "a malformed file falls back to the built-in defaults")
+
+        let onDisk = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        #expect(onDisk == Data(broken.utf8),
+                "a malformed file is left untouched, so it can be repaired by hand")
+    }
+
+    @Test func testWrongTypedLinePositionFallsBackToBottom() {
+        let path = TestTemp.path("ime.json")
+        try? FileManager.default.removeItem(atPath: path)
+        InputSource.configurationPath = path
+
+        // A boolean where a string is expected: the key decodes as nothing
+        // rather than failing the whole file.
+        let json = """
+        {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":true}
+        """
+        try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+
+        #expect(InputSource.linePosition == .bottom,
+                "a wrong-typed linePosition falls back to the bottom edge")
+
+        let onDisk = (try? Data(contentsOf: URL(fileURLWithPath: path))) ?? Data()
+        #expect(onDisk == Data(json.utf8),
+                "a wrong-typed linePosition does not make the store rewrite the file")
+    }
+
     @Test func testLegacyConfigurationMigration() {
         let savedConfigurationPath = InputSource.configurationPath
         let savedLegacyPath = InputSource.legacyConfigurationPath

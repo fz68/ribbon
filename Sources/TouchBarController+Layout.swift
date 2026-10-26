@@ -58,10 +58,10 @@ extension TouchBarController {
     }
 
     private func setupIndicatorLine() {
-        // The IME indicator: a 2 pt line along the very bottom edge of the bar.
+        // The IME indicator: a 2 pt line along the top or bottom edge of the bar.
         // It is added first, so it sits behind the chips. That is fine: it occupies
-        // the bottom 2 pt while the 24 pt chips are centred above it, so the two
-        // never overlap and the z-order is irrelevant.
+        // one edge of the bar while the 24 pt chips are centred, so the two never
+        // overlap and the z-order is irrelevant.
         imeLine.wantsLayer = true
         // One-time configuration of the reused layer. The gradient runs left to
         // right; a nil color list draws nothing, which lets a solid colour show
@@ -72,8 +72,10 @@ extension TouchBarController {
         imeLine.isHidden = true
         imeLine.translatesAutoresizingMaskIntoConstraints = true
         container.addSubview(imeLine)
-        container.bottomLine = imeLine
         imeLine.frame = NSRect(x: 0, y: 0, width: container.bounds.width, height: Theme.Layout.indicatorLineHeight)
+        container.line = imeLine
+        container.lineOnTop = InputSource.linePosition == .top
+        container.positionLine()
     }
 
     private func setupMediaStack() {

@@ -27,9 +27,10 @@ the selected input source.
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
-- Input source line: 2 pt along the bottom edge of the bar. It is hidden for plain keyboard
+- Input source line: 2 pt along one edge of the bar, bottom by default. It is hidden for plain keyboard
   layouts, drawn as a rainbow for Doubao, and drawn in a configurable colour for other input
-  methods.
+  methods. The edge the line is drawn on is switchable between top and bottom from
+  `menu-bar icon > IME Line Position`.
 
 ## Requirements
 
@@ -116,15 +117,16 @@ There are two configuration files: the input source line at
 ### Input source line (`ime.json`)
 
 It is created on first launch with a built-in default entry per enabled input source. The file is
-written as pretty-printed JSON with sorted keys. If it cannot be parsed, Ribbon logs the error, falls
-back to the built-in defaults and rewrites the file. Changes made from `menu-bar icon > IME Color`
-are written back to the same file. A source that is not listed falls back to the built-in rule for
-its kind, and ultimately to `default`.
+written as pretty-printed JSON with sorted keys. If it cannot be parsed, Ribbon logs the error and
+leaves the file untouched, so it can be repaired by hand; the app runs on the built-in defaults
+meanwhile. Changes made from `menu-bar icon > IME Color` are written back to the same file. A
+source that is not listed falls back to the built-in rule for its kind, and ultimately to `default`.
 
 Schema:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
+| `linePosition` | string, optional | Which vertical edge of the Touch Bar row the input source line is drawn on: `top` or `bottom`, default `bottom` |
 | `default` | object | Fallback entry for input sources without an entry of their own |
 | `default.name` | string, optional | Only source entries normally carry a name; informational |
 | `default.line` | bool | Whether the line is drawn |
@@ -152,6 +154,9 @@ Notes:
 - A plain keyboard layout (any id starting with `com.apple.keylayout.`) never draws the line, even
   when its entry has `line: true`.
 - `color` must be a six-digit `#RRGGBB` string; anything else is treated as no colour.
+- `linePosition` accepts `top` or `bottom`; any other string value falls back to `bottom`, and an
+  edit of the file is picked up by `menu-bar icon > Refresh`. The `menu-bar icon > IME Line
+  Position` item writes this key.
 - The palette used by the in-app menu and by the generated defaults is Red `#FF5F57`, Orange
   `#FF8C42`, Yellow `#FFD60A`, Green `#4CD964`, Cyan `#40C8E0`, Blue `#4FA3FF`, Purple `#B388FF`.
 
