@@ -22,7 +22,7 @@ the selected input source.
   Tap a chip to switch workspace.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps). A small level pill
-  flashes at the centre of the bar on every step.
+  flashes in the gap between the front app name and the brightness buttons on every step.
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
   `menu-bar icon > Clock Format` (see Configuration).

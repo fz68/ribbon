@@ -59,12 +59,16 @@ extension TouchBarController {
     }
 
     private func setupLevelPop() {
-        // Added last so the pill floats above the chips. Centred: the macOS
-        // volume/brightness OSD it imitates is centred too.
+        // Added last so the pill floats above the chips. It sits in the blank gap
+        // right of the front-app label and left of the brightness buttons, anchored
+        // to the buttons so its position is stable (rightStack is pinned to the
+        // trailing edge while the label width varies) and so it never covers the
+        // buttons themselves; a max-width label can only have its tail briefly
+        // covered during the 1 s flash.
         levelPop.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(levelPop)
         NSLayoutConstraint.activate([
-            levelPop.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            levelPop.trailingAnchor.constraint(equalTo: rightStack.leadingAnchor, constant: -Theme.Layout.clusterGap),
             levelPop.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             levelPop.widthAnchor.constraint(equalToConstant: Theme.Layout.levelPopWidth),
             levelPop.heightAnchor.constraint(equalToConstant: Theme.Layout.levelPopHeight),
