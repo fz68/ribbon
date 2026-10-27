@@ -74,8 +74,9 @@ enum Theme {
         static let appLabelTrailingPriority: Float = 999
         /// Font size of the labels in the right cluster and the app label.
         static let labelFontSize: CGFloat = 12
-        /// Fixed width of the battery slot: it holds either the percentage or the
-        /// charging bolt, so the slot never changes width.
+        /// Fixed width of the battery slot: it holds the percentage plus an
+        /// optional trailing bolt ("60" + bolt while charging), so the slot never
+        /// changes width.
         static let batterySlotWidth: CGFloat = 38
         /// Font size of a chip's workspace number and its placeholder glyph.
         static let chipFontSize: CGFloat = 13

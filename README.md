@@ -8,7 +8,7 @@ volume, battery, a clock and a Control Strip toggle. A 2 pt line along the very 
 the selected input source.
 
 ```
-[prev] [play] [next] | 1 2 3 | Safari | sun- sun+ vol- vol+ [87%|bolt] 10月24 周六 11:04 [strip]
+[prev] [play] [next] | 1 2 3 | Safari | sun- sun+ vol- vol+ [87%] 10月24 周六 11:04 [strip]
 =====================================================================================================================
    2 pt input source line (hidden for plain keyboard layouts, rainbow for Doubao)
 ```
@@ -28,7 +28,8 @@ the selected input source.
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
   `menu-bar icon > Clock Format` (see Configuration). The battery sits in a fixed-width slot, so
-  the buttons never move while the charging bolt replaces the percentage. The clock is sized to its
+  the buttons never move: it shows `60%`, and while charging the bolt replaces the `%` sign and
+  follows the number (`60⚡`). The clock is sized to its
   text: its width changes only when the date gains a digit (for example `1月1` -> `12月31`), which
   can shift the buttons left by a few points at midnight.
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip

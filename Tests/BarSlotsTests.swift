@@ -16,4 +16,13 @@ import Testing
         #expect(size.width <= Theme.Layout.batterySlotWidth,
                 "the battery percentage fits the fixed battery slot")
     }
+
+    /// While charging the "%" is replaced by a trailing bolt, so the widest
+    /// content is a three-digit number, the stack gap and the icon.
+    @Test func testChargingBatteryContentFitsTheBatterySlot() {
+        let number = ("100" as NSString).size(withAttributes: [.font: labelFont()]).width
+        let content = number + Theme.Layout.microSpacing + Theme.Layout.iconSize
+        #expect(content <= Theme.Layout.batterySlotWidth,
+                "the 3-digit number plus the charging bolt fit the fixed battery slot")
+    }
 }

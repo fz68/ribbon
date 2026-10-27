@@ -142,7 +142,7 @@ final class ChipView: NSView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.chipInset),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             // Caps the content stack so an over-long name truncates with an
-            // ellipsis inside the 72 pt chip instead of spilling and clipping.
+            // ellipsis inside Theme.Layout.chipWidth instead of spilling and clipping.
             contentTrailing,
             button.leadingAnchor.constraint(equalTo: leadingAnchor),
             button.trailingAnchor.constraint(equalTo: trailingAnchor),

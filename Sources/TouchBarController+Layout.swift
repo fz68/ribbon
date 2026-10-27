@@ -177,7 +177,7 @@ extension TouchBarController {
         batteryLabel.lineBreakMode = .byTruncatingTail
         batteryLabel.cell?.wraps = false
 
-        let batteryStack = NSStackView(views: [batteryBoltView, batteryLabel])
+        let batteryStack = NSStackView(views: [batteryLabel, batteryBoltView])
         batteryStack.orientation = .horizontal
         batteryStack.alignment = .centerY
         batteryStack.spacing = Theme.Layout.microSpacing
@@ -185,8 +185,8 @@ extension TouchBarController {
         // Hidden after the stack is built: NSStackView detaches hidden views, and
         // detaching before the bolt has an index would leave the order undefined.
         batteryBoltView.isHidden = true
-        // The slot holds the bolt and the percentage one after the other, so its
-        // width is fixed: the buttons to its left never move.
+        // The slot holds the number plus an optional trailing bolt, so its width
+        // is fixed: the buttons to its left never move.
         batteryStack.widthAnchor.constraint(equalToConstant: Theme.Layout.batterySlotWidth).isActive = true
 
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
