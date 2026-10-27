@@ -64,21 +64,38 @@ import Testing
                 "a change past the icon prefix restyles but does not rebuild icons")
     }
 
-    @Test func testChipWidthClampsLow() {
-        #expect(ChipUpdate.chipWidth(forContentWidth: 10) == Theme.Layout.chipMinWidth,
-                "narrow content clamps to the minimum chip width")
-        #expect(ChipUpdate.chipWidth(forContentWidth: 24) == Theme.Layout.chipMinWidth,
-                "content exactly at min minus padding lands on the minimum")
+    @Test func testIconCountThatFitsFitsWithinDefaultChip() {
+        // 72 - 16 inset - 15.6 label - 6 gap = 34.4 pt for icons: two 12 pt
+        // icons plus one 2 pt gap is 26, three would need 40.
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 72, nameWidth: 15.6, iconCount: 3) == 2,
+                "a full-width chip shows two of three icons")
     }
 
-    @Test func testChipWidthClampsHigh() {
-        #expect(ChipUpdate.chipWidth(forContentWidth: 1000) == Theme.Layout.chipMaxWidth,
-                "wide content clamps to the maximum chip width")
+    @Test func testIconCountThatFitsDropsIconsInCompressedChip() {
+        // 55 - 16 - 15.6 - 6 = 17.4 pt: only one 12 pt icon fits.
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 55, nameWidth: 15.6, iconCount: 3) == 1,
+                "a compressed chip keeps only the first icon")
     }
 
-    @Test func testChipWidthAddsPaddingInBetween() {
-        #expect(ChipUpdate.chipWidth(forContentWidth: 30) == 46,
-                "mid-range content gets the padding added (30 + 16)")
+    @Test func testIconCountThatFitsKeepsNoIconWhenNameFillsChip() {
+        // 72 - 16 - 50 - 6 = 0 pt: not even one icon fits beside a wide name.
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 72, nameWidth: 50, iconCount: 3) == 0,
+                "a name that fills the chip leaves no room for icons")
+    }
+
+    @Test func testIconCountThatFitsHandlesNoIcons() {
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 72, nameWidth: 15.6, iconCount: 0) == 0,
+                "a chip without icons reports none")
+    }
+
+    @Test func testIconCountThatFitsNeverExceedsIconCount() {
+        for count in 0...5 {
+            for width in stride(from: CGFloat(40), through: 200, by: 5) {
+                let visible = ChipUpdate.iconCountThatFits(chipWidth: width, nameWidth: 15.6, iconCount: count)
+                #expect((0...count).contains(visible),
+                        "the visible count stays within the icons the chip actually has")
+            }
+        }
     }
 
     @Test func testColorIndexIsStableAndInRange() {

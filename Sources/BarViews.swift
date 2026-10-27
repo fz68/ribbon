@@ -82,7 +82,6 @@ final class ChipView: NSView {
     private var iconApps: [String] = []
     private var iconGeneration = 0
     private var displayed: Workspace?
-    private var widthConstraint: NSLayoutConstraint!
 
     /// The pill background for the current state. The press handler and update()
     /// share it, so a released press always restores the fill the focus state
@@ -119,7 +118,7 @@ final class ChipView: NSView {
         number.lineBreakMode = .byTruncatingTail
         number.cell?.truncatesLastVisibleLine = true
         number.cell?.wraps = false
-        number.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        number.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         stack.addArrangedSubview(number)
         stack.setCustomSpacing(Theme.Layout.chipLabelSpacing, after: number)
 
@@ -134,8 +133,8 @@ final class ChipView: NSView {
         }
 
         // The content cap is 999, not required: it still wins over the label's
-        // defaultLow compression so long names truncate, but it yields to the
-        // required 12 pt icon widths when a crowded chip hits its 40 pt floor.
+        // defaultHigh compression so long names truncate, but overflowing icons
+        // are hidden by layout() instead of pushing the label off the chip.
         let contentTrailing = stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Theme.Layout.chipInset)
         contentTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
 
@@ -143,7 +142,7 @@ final class ChipView: NSView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.chipInset),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             // Caps the content stack so an over-long name truncates with an
-            // ellipsis inside the 88 pt chip instead of spilling and clipping.
+            // ellipsis inside the 72 pt chip instead of spilling and clipping.
             contentTrailing,
             button.leadingAnchor.constraint(equalTo: leadingAnchor),
             button.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -151,17 +150,15 @@ final class ChipView: NSView {
             button.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        // Width is content driven. update() writes this constraint's constant
-        // instead of adding and dropping a width constraint on every rebuild.
-        // The wanted width yields to crowding: when the chip row outgrows the bar,
-        // chips compress (long names truncate) instead of overlapping the right
-        // cluster. The floor and cap below stay required, so a chip never leaves
-        // 40...88 pt.
-        widthConstraint = widthAnchor.constraint(equalToConstant: 0)
-        widthConstraint.priority = NSLayoutConstraint.Priority(750)
-        widthConstraint.isActive = true
+        // Every chip has the same fixed width, so the chips and the front app
+        // name keep their positions when apps open or close. The wanted width
+        // yields to crowding: when the chip row outgrows the bar, chips
+        // compress (long names truncate) instead of overlapping the right
+        // cluster. The floor stays required, so a chip never drops below 40 pt.
+        let chipWidth = widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth)
+        chipWidth.priority = NSLayoutConstraint.Priority(750)
+        chipWidth.isActive = true
         widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.Layout.chipMinWidth).isActive = true
-        widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.chipMaxWidth).isActive = true
         heightAnchor.constraint(equalToConstant: Theme.Layout.controlSize).isActive = true
 
         update(workspace: workspace, index: index)
@@ -234,13 +231,26 @@ final class ChipView: NSView {
             // Re-adding arranged subviews resets the spacing after the number.
             stack.setCustomSpacing(Theme.Layout.chipLabelSpacing, after: number)
         }
+    }
 
-        // Measure with the chip parked at its cap first: the trailing content
-        // constraint then reads an over-long name as "cap it" instead of echoing
-        // back whatever width crowding last squeezed the chip to.
-        widthConstraint.constant = Theme.Layout.chipMaxWidth
-        let contentWidth = stack.fittingSize.width
-        widthConstraint.constant = ChipUpdate.chipWidth(forContentWidth: contentWidth)
+    /// Icons yield to the number: after every layout pass the trailing icons
+    /// that no longer fit the chip are hidden, so the number stays whole.
+    override func layout() {
+        super.layout()
+        hideOverflowingIcons()
+    }
+
+    /// Applies `ChipUpdate.iconCountThatFits` to every icon view, hiding and
+    /// showing all of them each pass so icons return when the chip grows.
+    private func hideOverflowingIcons() {
+        let visible = ChipUpdate.iconCountThatFits(
+            chipWidth: bounds.width,
+            nameWidth: number.intrinsicContentSize.width,
+            iconCount: iconViews.count
+        )
+        for (index, icon) in iconViews.enumerated() {
+            icon.isHidden = index >= visible
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -265,6 +275,12 @@ final class LevelPopView: NSView {
         fillView.layer?.cornerRadius = (Theme.Layout.levelPopHeight - 3) / 2
         addSubview(fillView)
         isHidden = true
+    }
+
+    /// The pill only paints, so it never takes a click meant for the control
+    /// underneath it.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
     }
 
     /// `level` is 0...1 and is clamped; the fill keeps a 2 pt nub at zero so

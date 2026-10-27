@@ -8,8 +8,8 @@ volume, battery, a clock and a Control Strip toggle. A 2 pt line along the very 
 the selected input source.
 
 ```
- [prev] [play] [next] | 1 [icons] 2 [icons] 3 [icons] | Safari | sun- sun+ vol- vol+ 87% 10月24 周六 11:04 [strip]
- =================================================================================================================
+[prev] [play] [next] | 1 [icons] 2 [icons] 3 [icons] | Safari | sun- sun+ vol- vol+ [87%|bolt] 10月24 周六 11:04 [strip]
+=====================================================================================================================
    2 pt input source line (hidden for plain keyboard layouts, rainbow for Doubao)
 ```
 
@@ -19,13 +19,16 @@ the selected input source.
   the standard media keys otherwise.
 - One chip per AeroSpace workspace: workspace name plus up to three app icons. The focused chip is
   a gold pill with dark text; each other chip keeps a stable colour derived from its workspace name.
-  Tap a chip to switch workspace.
+  Tap a chip to switch workspace. Every chip has the same fixed width, so the chips and the front app
+  name keep their positions when apps open or close.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps). A small level pill
   flashes in the gap between the front app name and the brightness buttons on every step.
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
-  `menu-bar icon > Clock Format` (see Configuration).
+  `menu-bar icon > Clock Format` (see Configuration). The battery and the clock each sit in a
+  fixed-width slot, so the brightness, volume and Control Strip buttons never move; while the
+  battery charges, the charging bolt replaces the percentage in the battery slot.
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
@@ -33,6 +36,8 @@ the selected input source.
   layouts, drawn as a rainbow for Doubao, and drawn in a configurable colour for other input
   methods. The edge the line is drawn on is switchable between top and bottom from
   `menu-bar icon > IME Line Position`.
+- The bar's content is flush with the Touch Bar's edges: there is no left or right margin, so the
+  outermost controls sit exactly at the ends of the bar.
 
 ## Requirements
 
@@ -225,8 +230,10 @@ nor distributed through the App Store.
 - AeroSpace only. There is no support for other window managers.
 - AeroSpace has no window-closed event, so closing a background window can leave its icon visible
   until the next event or the 30 s refresh.
-- When the chip row outgrows the bar, chips compress and their names truncate; beyond roughly a
-  dozen workspaces the row can still crowd the right cluster.
+- All workspace chips share one fixed width, so a workspace name that does not fit is truncated, but
+  only when the name alone is wider than the chip. When the chip row outgrows the bar, chips compress
+  toward the 40 pt floor and overflow app icons are dropped first, so the workspace number always
+  stays fully visible. Beyond roughly a dozen workspaces the row can still crowd the right cluster.
 - The full-width layout assumes the 13-inch panel: the app requests 1004 pt and the system grants
   996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and

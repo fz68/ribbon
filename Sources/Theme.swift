@@ -44,10 +44,11 @@ enum Theme {
         static let indicatorLineHeight: CGFloat = 2
         /// Corner radius shared by the control buttons and the chips.
         static let cornerRadius: CGFloat = 6
-        // The three constants below share the value 8 today, but they are
+        // clusterGap and chipInset happen to share the value 8, but they are
         // independent: do not merge them back into one constant.
-        /// Inset of the bar from the container's leading and trailing edge.
-        static let barMargin: CGFloat = 8
+        /// Inset of the bar's content from the Touch Bar's edges. 0, so the
+        /// outermost controls sit flush with the edges.
+        static let barMargin: CGFloat = 0
         /// Horizontal gap between two adjacent clusters.
         static let clusterGap: CGFloat = 8
         /// Padding between a chip's own leading edge and its content stack.
@@ -60,12 +61,11 @@ enum Theme {
         static let microSpacing: CGFloat = 2
         /// Gap between a chip's number and its first app icon.
         static let chipLabelSpacing: CGFloat = 6
+        /// Fixed width of every workspace chip, so the chips and the app name
+        /// keep their positions when apps open or close.
+        static let chipWidth: CGFloat = 72
         /// Narrowest a chip may get.
         static let chipMinWidth: CGFloat = 40
-        /// Widest a chip may get.
-        static let chipMaxWidth: CGFloat = 88
-        /// Width a chip adds around its measured content.
-        static let chipWidthPadding: CGFloat = 16
         /// Side length of an app icon inside a chip.
         static let iconSize: CGFloat = 12
         /// Cap on the front-app label so it never crowds the right cluster.
@@ -74,6 +74,12 @@ enum Theme {
         static let appLabelTrailingPriority: Float = 999
         /// Font size of the labels in the right cluster and the app label.
         static let labelFontSize: CGFloat = 12
+        /// Fixed width of the battery slot: it holds either the percentage or the
+        /// charging bolt, so the slot never changes width.
+        static let batterySlotWidth: CGFloat = 38
+        /// Fixed width of the clock slot, so a longer or shorter clock string
+        /// cannot push the buttons to the left.
+        static let clockWidth: CGFloat = 116
         /// Font size of a chip's workspace number and its placeholder glyph.
         static let chipFontSize: CGFloat = 13
         /// Width of the transient brightness/volume level pill.

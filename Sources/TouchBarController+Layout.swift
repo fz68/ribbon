@@ -60,11 +60,11 @@ extension TouchBarController {
 
     private func setupLevelPop() {
         // Added last so the pill floats above the chips. It sits in the blank gap
-        // right of the front-app label and left of the brightness buttons, anchored
-        // to the buttons so its position is stable (rightStack is pinned to the
-        // trailing edge while the label width varies) and so it never covers the
-        // buttons themselves; a max-width label can only have its tail briefly
-        // covered during the 1 s flash.
+        // right of the front-app label and left of the brightness buttons,
+        // anchored to the buttons so its position is fixed: the right cluster has
+        // a fixed width now, so the clock and the battery can no longer shift
+        // it. It passes clicks through, so it never swallows a tap meant for a
+        // control underneath it.
         levelPop.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(levelPop)
         NSLayoutConstraint.activate([
@@ -172,6 +172,9 @@ extension TouchBarController {
         batteryLabel.textColor = NSColor(argb: Theme.primaryText)
         batteryLabel.alignment = .left
         batteryLabel.maximumNumberOfLines = 1
+        // Truncate instead of growing: a wrapping cell ignores lineBreakMode.
+        batteryLabel.lineBreakMode = .byTruncatingTail
+        batteryLabel.cell?.wraps = false
 
         let batteryStack = NSStackView(views: [batteryBoltView, batteryLabel])
         batteryStack.orientation = .horizontal
@@ -181,13 +184,24 @@ extension TouchBarController {
         // Hidden after the stack is built: NSStackView detaches hidden views, and
         // detaching before the bolt has an index would leave the order undefined.
         batteryBoltView.isHidden = true
+        // The slot holds the bolt and the percentage one after the other, so its
+        // width is fixed: the buttons to its left never move.
+        batteryStack.widthAnchor.constraint(equalToConstant: Theme.Layout.batterySlotWidth).isActive = true
 
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
         timeLabel.textColor = NSColor(argb: Theme.primaryText)
         timeLabel.alignment = .right
         timeLabel.maximumNumberOfLines = 1
-        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
-        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        // Truncate instead of growing: a wrapping cell ignores lineBreakMode.
+        // Cutting the head keeps the minutes visible when a custom format is
+        // longer than the slot.
+        timeLabel.lineBreakMode = .byTruncatingHead
+        timeLabel.cell?.wraps = false
+        // The fixed slot wins: the label yields to it and truncates instead of fighting it.
+        timeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        // The clock slot is fixed, so the string inside it can only be shorter.
+        timeLabel.widthAnchor.constraint(equalToConstant: Theme.Layout.clockWidth).isActive = true
 
         rightStack.addArrangedSubview(brightnessDownButton)
         rightStack.addArrangedSubview(brightnessUpButton)

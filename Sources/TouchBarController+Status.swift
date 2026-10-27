@@ -101,16 +101,15 @@ extension TouchBarController {
     }
 
     func applyBattery(_ status: BatteryState?) {
-        // A nil status means "unknown", so the bolt hides along with the "--%".
-        batteryBoltView.isHidden = !(status?.charging ?? false)
+        // The bolt and the percentage share one fixed-width slot, so only one of
+        // them is on screen: the bolt takes the slot's place while charging, the
+        // percentage takes it back otherwise. A nil status means "unknown", so
+        // the bolt hides along with the "--%".
+        let charging = status?.charging ?? false
+        batteryBoltView.isHidden = !charging
+        batteryLabel.isHidden = charging
         // Skip identical text so an unchanged battery reading avoids a no-op CA transaction.
-        guard let status else {
-            if batteryLabel.stringValue != "--%" {
-                batteryLabel.stringValue = "--%"
-            }
-            return
-        }
-        let text = "\(status.percent)%"
+        let text = status.map { "\($0.percent)%" } ?? "--%"
         if batteryLabel.stringValue != text {
             batteryLabel.stringValue = text
         }
