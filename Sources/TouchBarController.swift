@@ -32,6 +32,11 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     var frontAppName = ""
     let rightStack = NSStackView()
     let batteryLabel = NSTextField(labelWithString: "--%")
+    let batteryBoltView = NSImageView()
+    /// The transient brightness/volume pill, hidden until a step happens.
+    let levelPop = LevelPopView()
+    /// Hides `levelPop` after the step has been shown for its full interval.
+    var levelPopTimer: Timer?
     let timeLabel = NSTextField(labelWithString: "")
     let volumeQueue = DispatchQueue(label: "local.ribbon.volume")
     /// Refreshes the clock. Formatting only, so it never spawns a process.
@@ -192,8 +197,19 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     }
 
     func dismiss() {
+        resetPressedAppearances()
         NSTouchBar.dismissSystemModalTouchBar(touchBar)
         log("dismissed")
+    }
+
+    /// A bar dismissed mid-press never sees the release, so a button can be left
+    /// in its pressed colour. Reset every pill before the bar goes away.
+    func resetPressedAppearances() {
+        for button in [mediaPrevButton, mediaPlayPauseButton, mediaNextButton,
+                       brightnessDownButton, brightnessUpButton,
+                       volumeDownButton, volumeUpButton, controlStripButton] {
+            button.layer?.backgroundColor = NSColor(argb: Theme.controlBackground).cgColor
+        }
     }
 
     public func shutdown() {
@@ -210,6 +226,8 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         batteryTimer = nil
         mediaTimer?.invalidate()
         mediaTimer = nil
+        levelPopTimer?.invalidate()
+        levelPopTimer = nil
         imeWatcher.stop()
         AeroSpace.stopMonitoring()
         dismiss()

@@ -6,6 +6,23 @@ import Cocoa
 /// the button exactly 24x24 with its background pill and SF Symbol centred.
 final class ControlButton: NSButton {
     override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+
+    // Every ControlButton paints `controlBackground`, so a press only has to
+    // swap that one colour: no separate pressed layer or state machine.
+    override var isHighlighted: Bool {
+        didSet {
+            layer?.backgroundColor = NSColor(argb: isHighlighted ? Theme.controlBackgroundPressed : Theme.controlBackground).cgColor
+        }
+    }
+}
+
+/// The transparent full-chip tap target. The chip's pill lives on ChipView's
+/// own layer, so the press state is forwarded instead of painted here.
+final class ChipTapButton: NSButton {
+    var pressChanged: ((Bool) -> Void)?
+    override var isHighlighted: Bool {
+        didSet { pressChanged?(isHighlighted) }
+    }
 }
 
 /// The borderless, non-focusable base style every bar button shares. Only the
@@ -60,12 +77,24 @@ final class ChipView: NSView {
     let stack = NSStackView()
 
     private let number = NSTextField(labelWithString: "")
-    private let button = NSButton()
+    private let button = ChipTapButton()
     private var iconViews: [NSImageView] = []
     private var iconApps: [String] = []
     private var iconGeneration = 0
     private var displayed: Workspace?
     private var widthConstraint: NSLayoutConstraint!
+
+    /// The pill background for the current state. The press handler and update()
+    /// share it, so a released press always restores the fill the focus state
+    /// calls for instead of a hard-coded dark.
+    private func backgroundHex(forPressed pressed: Bool) -> UInt32 {
+        if pressed {
+            return (displayed?.isFocused ?? false)
+                ? Theme.focusedChipBackgroundPressed : Theme.controlBackgroundPressed
+        }
+        return (displayed?.isFocused ?? false)
+                ? Theme.focusedChipBackground : Theme.controlBackground
+    }
 
     init(workspace: Workspace, index: Int, target: AnyObject?, action: Selector) {
         super.init(frame: .zero)
@@ -86,6 +115,11 @@ final class ChipView: NSView {
         // end of init, so a fresh chip and a reused one share one styling path.
         number.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.chipFontSize, weight: .medium)
         number.maximumNumberOfLines = 1
+        // Non-wrapping cell, or lineBreakMode is ignored and the name clips.
+        number.lineBreakMode = .byTruncatingTail
+        number.cell?.truncatesLastVisibleLine = true
+        number.cell?.wraps = false
+        number.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         stack.addArrangedSubview(number)
         stack.setCustomSpacing(Theme.Layout.chipLabelSpacing, after: number)
 
@@ -93,10 +127,24 @@ final class ChipView: NSView {
         button.target = target
         button.action = action
         addSubview(button)
+        // ChipView owns the pill, so the tap target only forwards the press.
+        button.pressChanged = { [weak self] pressed in
+            guard let self else { return }
+            self.layer?.backgroundColor = NSColor(argb: self.backgroundHex(forPressed: pressed)).cgColor
+        }
+
+        // The content cap is 999, not required: it still wins over the label's
+        // defaultLow compression so long names truncate, but it yields to the
+        // required 12 pt icon widths when a crowded chip hits its 40 pt floor.
+        let contentTrailing = stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Theme.Layout.chipInset)
+        contentTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.chipInset),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            // Caps the content stack so an over-long name truncates with an
+            // ellipsis inside the 88 pt chip instead of spilling and clipping.
+            contentTrailing,
             button.leadingAnchor.constraint(equalTo: leadingAnchor),
             button.trailingAnchor.constraint(equalTo: trailingAnchor),
             button.topAnchor.constraint(equalTo: topAnchor),
@@ -105,8 +153,15 @@ final class ChipView: NSView {
 
         // Width is content driven. update() writes this constraint's constant
         // instead of adding and dropping a width constraint on every rebuild.
+        // The wanted width yields to crowding: when the chip row outgrows the bar,
+        // chips compress (long names truncate) instead of overlapping the right
+        // cluster. The floor and cap below stay required, so a chip never leaves
+        // 40...88 pt.
         widthConstraint = widthAnchor.constraint(equalToConstant: 0)
+        widthConstraint.priority = NSLayoutConstraint.Priority(750)
         widthConstraint.isActive = true
+        widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.Layout.chipMinWidth).isActive = true
+        widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.chipMaxWidth).isActive = true
         heightAnchor.constraint(equalToConstant: Theme.Layout.controlSize).isActive = true
 
         update(workspace: workspace, index: index)
@@ -140,11 +195,18 @@ final class ChipView: NSView {
         )
         guard case .restyle(let reconcileIcons) = plan else { return }
 
+        // backgroundHex reads `displayed`, so record the new workspace before
+        // the restyle paints its fill.
+        displayed = workspace
+
         let color = workspace.isFocused
             ? NSColor(argb: Theme.focusedChipBorder)
-            : NSColor(argb: Theme.chipRainbow[(index + 1) % Theme.chipRainbow.count])
+            : NSColor(argb: Theme.chipRainbow[ChipUpdate.colorIndex(forName: workspace.name)])
         layer?.borderColor = color.cgColor
-        number.textColor = color
+        number.textColor = workspace.isFocused
+            ? NSColor(argb: Theme.focusedChipText)
+            : color
+        layer?.backgroundColor = NSColor(argb: backgroundHex(forPressed: false)).cgColor
 
         if number.stringValue != workspace.name {
             number.stringValue = workspace.name
@@ -173,8 +235,48 @@ final class ChipView: NSView {
             stack.setCustomSpacing(Theme.Layout.chipLabelSpacing, after: number)
         }
 
-        displayed = workspace
-        widthConstraint.constant = ChipUpdate.chipWidth(forContentWidth: stack.fittingSize.width)
+        // Measure with the chip parked at its cap first: the trailing content
+        // constraint then reads an over-long name as "cap it" instead of echoing
+        // back whatever width crowding last squeezed the chip to.
+        widthConstraint.constant = Theme.Layout.chipMaxWidth
+        let contentWidth = stack.fittingSize.width
+        widthConstraint.constant = ChipUpdate.chipWidth(forContentWidth: contentWidth)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+/// The transient pill centred over the bar that shows the new brightness or
+/// volume level after a step. Frames are manual: the size is fixed, so Auto
+/// Layout has nothing to do inside.
+final class LevelPopView: NSView {
+    private let fillView = NSView()
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: Theme.Layout.levelPopWidth, height: Theme.Layout.levelPopHeight))
+        wantsLayer = true
+        layer?.backgroundColor = NSColor(argb: Theme.controlBackground).cgColor
+        layer?.cornerRadius = Theme.Layout.levelPopHeight / 2
+        layer?.masksToBounds = true
+        fillView.wantsLayer = true
+        fillView.layer?.backgroundColor = NSColor(argb: Theme.primaryText).cgColor
+        fillView.layer?.cornerRadius = (Theme.Layout.levelPopHeight - 3) / 2
+        addSubview(fillView)
+        isHidden = true
+    }
+
+    /// `level` is 0...1 and is clamped; the fill keeps a 2 pt nub at zero so
+    /// the pill still reads as "at minimum" rather than empty.
+    func show(level: CGFloat) {
+        let inset: CGFloat = 1.5
+        let maxWidth = bounds.width - inset * 2
+        fillView.frame = NSRect(x: inset,
+                                y: inset,
+                                width: max(2, maxWidth * min(max(level, 0), 1)),
+                                height: bounds.height - inset * 2)
+        isHidden = false
     }
 
     required init?(coder: NSCoder) {

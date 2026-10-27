@@ -18,9 +18,11 @@ the selected input source.
 - Media previous / play-pause / next. Uses `nowplaying-cli` when it is installed and falls back to
   the standard media keys otherwise.
 - One chip per AeroSpace workspace: workspace name plus up to three app icons. The focused chip is
-  yellow, the others cycle through a 12-colour palette. Tap a chip to switch workspace.
+  a gold pill with dark text; each other chip keeps a stable colour derived from its workspace name.
+  Tap a chip to switch workspace.
 - Front app name, immediately right of the workspace chips.
-- Brightness down / up (10% steps) and output volume down / up (5% steps).
+- Brightness down / up (10% steps) and output volume down / up (5% steps). A small level pill
+  flashes at the centre of the bar on every step.
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
   `menu-bar icon > Clock Format` (see Configuration).
@@ -223,6 +225,8 @@ nor distributed through the App Store.
 - AeroSpace only. There is no support for other window managers.
 - AeroSpace has no window-closed event, so closing a background window can leave its icon visible
   until the next event or the 30 s refresh.
+- When the chip row outgrows the bar, chips compress and their names truncate; beyond roughly a
+  dozen workspaces the row can still crowd the right cluster.
 - The full-width layout assumes the 13-inch panel: the app requests 1004 pt and the system grants
   996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and

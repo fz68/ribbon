@@ -43,8 +43,19 @@ extension TouchBarController {
         }
     }
 
+    /// Dims the transport row when no media session is reporting. The buttons
+    /// stay enabled: the media-key fallback may still control something.
+    func setMediaIdle(_ idle: Bool) {
+        let alpha: CGFloat = idle ? 0.45 : 1
+        // Skip identical writes, matching the other label refreshes. The stack
+        // covers all three buttons and is hidden in strip mode anyway.
+        guard mediaStack.alphaValue != alpha else { return }
+        mediaStack.alphaValue = alpha
+    }
+
     /// Updates the backoff counter and schedules the next poll.
     func finishMediaPoll(available: Bool) {
+        setMediaIdle(!available)
         mediaPoll = mediaPoll.recording(available: available)
         scheduleMediaPoll()
     }

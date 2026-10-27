@@ -38,4 +38,15 @@ enum ChipUpdate {
         max(Theme.Layout.chipMinWidth,
             min(Theme.Layout.chipMaxWidth, contentWidth + Theme.Layout.chipWidthPadding))
     }
+
+    /// Deterministic djb2 hash of the workspace name, so a chip keeps its
+    /// colour across launches and when workspaces are added or removed.
+    /// `String.hashValue` is seeded per process, so it cannot be used here.
+    static func colorIndex(forName name: String) -> Int {
+        var hash: UInt64 = 5381
+        for scalar in name.unicodeScalars {
+            hash = (hash << 5) &+ hash &+ UInt64(scalar.value)
+        }
+        return Int(hash % UInt64(Theme.chipRainbow.count))
+    }
 }

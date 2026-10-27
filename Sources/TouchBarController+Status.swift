@@ -17,6 +17,7 @@ extension TouchBarController {
             log("brightness \(name) unavailable")
             return
         }
+        showLevel(Double(value))
         let rounded = (value * 100).rounded() / 100
         log("brightness \(name) -> \(rounded)")
     }
@@ -39,9 +40,22 @@ extension TouchBarController {
                     log("volume \(name) unavailable")
                     return
                 }
+                self.showLevel(Double(result) / 100)
                 log("volume \(name) -> \(result)")
             }
         }
+    }
+
+    /// Flashes the centred level pill and re-arms its auto-hide timer. Both
+    /// callers already run on the main thread.
+    func showLevel(_ level: Double) {
+        levelPop.show(level: CGFloat(level))
+        levelPopTimer?.invalidate()
+        let timer = Timer(timeInterval: Theme.Timing.levelPop, repeats: false) { [weak self] _ in
+            self?.levelPop.isHidden = true
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        levelPopTimer = timer
     }
 
     // MARK: - Status (battery + clock)
@@ -87,6 +101,8 @@ extension TouchBarController {
     }
 
     func applyBattery(_ status: BatteryState?) {
+        // A nil status means "unknown", so the bolt hides along with the "--%".
+        batteryBoltView.isHidden = !(status?.charging ?? false)
         // Skip identical text so an unchanged battery reading avoids a no-op CA transaction.
         guard let status else {
             if batteryLabel.stringValue != "--%" {

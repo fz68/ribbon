@@ -55,6 +55,20 @@ extension TouchBarController {
         // The app label is pinned to the chip row on one side and the right
         // cluster on the other, so both have to exist before it is constrained.
         constrainAppLabel()
+        setupLevelPop()
+    }
+
+    private func setupLevelPop() {
+        // Added last so the pill floats above the chips. Centred: the macOS
+        // volume/brightness OSD it imitates is centred too.
+        levelPop.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(levelPop)
+        NSLayoutConstraint.activate([
+            levelPop.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            levelPop.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            levelPop.widthAnchor.constraint(equalToConstant: Theme.Layout.levelPopWidth),
+            levelPop.heightAnchor.constraint(equalToConstant: Theme.Layout.levelPopHeight),
+        ])
     }
 
     private func setupIndicatorLine() {
@@ -140,16 +154,29 @@ extension TouchBarController {
             rightStack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
         ])
 
+        // The bolt only shows while charging; applyBattery toggles isHidden.
+        batteryBoltView.imageScaling = .scaleProportionallyDown
+        batteryBoltView.contentTintColor = NSColor(argb: Theme.batteryChargingTint)
+        batteryBoltView.translatesAutoresizingMaskIntoConstraints = false
+        batteryBoltView.widthAnchor.constraint(equalToConstant: Theme.Layout.iconSize).isActive = true
+        batteryBoltView.heightAnchor.constraint(equalToConstant: Theme.Layout.iconSize).isActive = true
+        if let image = SymbolImage.make("bolt.fill", accessibility: "Battery charging", logContext: "battery bolt") {
+            batteryBoltView.image = image
+        }
+
         batteryLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
         batteryLabel.textColor = NSColor(argb: Theme.primaryText)
         batteryLabel.alignment = .left
         batteryLabel.maximumNumberOfLines = 1
 
-        let batteryStack = NSStackView(views: [batteryLabel])
+        let batteryStack = NSStackView(views: [batteryBoltView, batteryLabel])
         batteryStack.orientation = .horizontal
         batteryStack.alignment = .centerY
         batteryStack.spacing = Theme.Layout.microSpacing
         batteryStack.translatesAutoresizingMaskIntoConstraints = false
+        // Hidden after the stack is built: NSStackView detaches hidden views, and
+        // detaching before the bolt has an index would leave the order undefined.
+        batteryBoltView.isHidden = true
 
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
         timeLabel.textColor = NSColor(argb: Theme.primaryText)

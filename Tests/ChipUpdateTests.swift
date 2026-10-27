@@ -80,4 +80,22 @@ import Testing
         #expect(ChipUpdate.chipWidth(forContentWidth: 30) == 46,
                 "mid-range content gets the padding added (30 + 16)")
     }
+
+    @Test func testColorIndexIsStableAndInRange() {
+        let names = ["1", "2", "web", "code", "media", "杂项"]
+        // Pinned djb2 results; they assume the current 12-entry palette and must
+        // be recomputed if chipRainbow changes length.
+        let pinned = [10, 11, 11, 8, 1, 0]
+        let indices = names.map { ChipUpdate.colorIndex(forName: $0) }
+        for (name, index) in zip(names, pinned) {
+            #expect(ChipUpdate.colorIndex(forName: name) == index,
+                    "the same name hashes to the same colour index in every process")
+        }
+        for index in indices {
+            #expect((0..<Theme.chipRainbow.count).contains(index),
+                    "the colour index lands inside the rainbow palette")
+        }
+        #expect(Set(indices).count >= 2,
+                "different names spread across the palette instead of all colliding")
+    }
 }

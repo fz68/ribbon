@@ -52,7 +52,7 @@ extension TouchBarController {
             .font: NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.chipFontSize, weight: .medium),
             .foregroundColor: grey,
         ])
-        let button = NSButton(title: "?", target: self, action: #selector(refreshTapped))
+        let button = ControlButton(title: "?", target: self, action: #selector(refreshTapped))
         button.applyBarButtonStyle()
         button.attributedTitle = title
         button.wantsLayer = true

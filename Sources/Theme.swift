@@ -13,10 +13,20 @@ enum Theme {
     ]
     /// Control-button and chip background.
     static let controlBackground: UInt32 = 0xff363944
+    /// Background of a control or chip while pressed (one step lighter than `controlBackground`).
+    static let controlBackgroundPressed: UInt32 = 0xff454b5b
+    /// Tint of the charging bolt next to the battery percentage.
+    static let batteryChargingTint: UInt32 = 0xffc3e88d
     /// Label text and control tint.
     static let primaryText: UInt32 = 0xffe2e2e3
     /// Border of the focused workspace chip.
     static let focusedChipBorder: UInt32 = 0xffe7c664
+    /// Fill of the focused workspace chip.
+    static let focusedChipBackground: UInt32 = 0xffe7c664
+    /// Name text on the gold fill of the focused chip.
+    static let focusedChipText: UInt32 = 0xff1a1b26
+    /// Fill of the focused chip while pressed (a step darker gold).
+    static let focusedChipBackgroundPressed: UInt32 = 0xffd3b25a
     /// Placeholder chip glyph.
     static let placeholderTint: UInt32 = 0xff6c7086
 
@@ -66,6 +76,10 @@ enum Theme {
         static let labelFontSize: CGFloat = 12
         /// Font size of a chip's workspace number and its placeholder glyph.
         static let chipFontSize: CGFloat = 13
+        /// Width of the transient brightness/volume level pill.
+        static let levelPopWidth: CGFloat = 90
+        /// Height of the transient brightness/volume level pill.
+        static let levelPopHeight: CGFloat = 8
     }
 
     /// The delays and intervals the bar runs on.
@@ -100,5 +114,7 @@ enum Theme {
         static let mediaIdlePoll: TimeInterval = 120
         /// Consecutive empty media polls before backing off to `mediaIdlePoll`.
         static let mediaMissThreshold: Int = 2
+        /// How long the brightness/volume level pill stays visible.
+        static let levelPop: TimeInterval = 1
     }
 }
