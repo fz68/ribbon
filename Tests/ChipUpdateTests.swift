@@ -5,6 +5,15 @@ import Testing
 @Suite(.serialized) final class ChipUpdateTests {
     init() { _ = TestBootstrap.tempRoot }
 
+    @Test func testDisplayNameMapsTheTenthWorkspaceToZero() {
+        #expect(ChipUpdate.displayName(for: "10") == "0",
+                "the 10th workspace reads 0, like the 0 key that reaches it")
+        #expect(ChipUpdate.displayName(for: "1") == "1", "a single digit is unchanged")
+        #expect(ChipUpdate.displayName(for: "9") == "9", "the 9th workspace is unchanged")
+        #expect(ChipUpdate.displayName(for: "main") == "main",
+                "a non-numeric name is untouched")
+    }
+
     @Test func testPlanSkipsIdenticalChip() {
         let ws = Workspace(name: "1", isFocused: true, apps: ["Mail", "Safari"])
         let plan = ChipUpdate.plan(workspace: ws, displayed: ws, apps: ["Mail", "Safari"],

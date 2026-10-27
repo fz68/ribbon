@@ -17,21 +17,22 @@ the selected input source.
 
 - Media previous / play-pause / next. Uses `nowplaying-cli` when it is installed and falls back to
   the standard media keys otherwise.
-- One chip per AeroSpace workspace, showing its number. The focused chip is a gold pill with dark
-  text; each other chip keeps a stable colour derived from its workspace name. Tap a chip to switch
-  workspace. Every chip has the same fixed 40 pt width, so the chips and the front app name keep
-  their positions when apps open or close. At 40 pt there is room for the number only: a name longer
-  than two digits truncates and app icons are not drawn.
+- One chip per AeroSpace workspace, showing its number; the 10th workspace reads `0`, like the 0
+  key that reaches it. The focused chip is a gold pill with dark text; each other chip keeps a
+  stable colour derived from its workspace name. Tap a chip to switch workspace. Every chip has the
+  same fixed 50 pt width, so the chips and the front app name keep their positions when apps open or
+  close. At 50 pt there is room for the number and one app icon, so a chip shows the first app open
+  on its workspace; a name longer than three digits truncates.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps). A small level pill
   flashes in the gap between the front app name and the brightness buttons on every step.
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
   `menu-bar icon > Clock Format` (see Configuration). The battery sits in a fixed-width slot, so
-  the buttons never move: it shows `60%`, and while charging the bolt replaces the `%` sign and
-  follows the number (`60⚡`). The clock is sized to its
-  text: its width changes only when the date gains a digit (for example `1月1` -> `12月31`), which
-  can shift the buttons left by a few points at midnight.
+  the buttons never move: it shows `87%`, `F` at full charge, `87⚡` while charging (the bolt
+  replaces the `%` sign and follows the number) and `F⚡` when it is full and charging. The clock is
+  sized to its text: its width changes only when the date gains a digit (for example `1月1` ->
+  `12月31`), which can shift the buttons left by a few points at midnight.
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
@@ -232,12 +233,12 @@ nor distributed through the App Store.
 - Only one system-modal Touch Bar host can exist at a time; another app presenting one wins.
 - AeroSpace only. There is no support for other window managers.
 - AeroSpace has no window-closed event, so closing a background window can leave its icon state
-  stale until the next event or the 30 s refresh. At the 40 pt chip width no icon is drawn, so this
-  is invisible until the width is raised.
-- All workspace chips share one fixed 40 pt width, so a workspace name that does not fit is
-  truncated: only a two-digit number fits, a three-digit name is cut, and no app icon is drawn. The
-  chip row cannot compress below 40 pt, so a full-width bar holds roughly 13 workspaces before the
-  row crowds the right cluster.
+  stale until the next event or the 30 s refresh. At the 50 pt chip width one app icon is drawn, so
+  a stale icon can stay visible until the next refresh.
+- All workspace chips share one fixed 50 pt width, so a workspace name that does not fit is
+  truncated: three digits fit and one app icon fits beside the number, a longer name truncates. A
+  chip may compress to 40 pt when the row is crowded, so a full-width bar holds roughly 11
+  workspaces before the row crowds the right cluster (the 10-workspace row is 10*54 - 4 = 536 pt).
 - The full-width layout assumes the 13-inch panel: the app requests 1004 pt and the system grants
   996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and

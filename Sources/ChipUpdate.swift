@@ -32,6 +32,15 @@ enum ChipUpdate {
         return .restyle(reconcileIcons: apps != iconApps || iconGeneration != iconCacheGeneration)
     }
 
+    /// The number a chip shows for a workspace name.
+    ///
+    /// The mapping mirrors the keyboard: AeroSpace's 10th workspace is reached
+    /// with the 0 key, so it reads "0". Every other name, numeric or not, is
+    /// shown unchanged; the workspace identity itself is never renamed.
+    static func displayName(for name: String) -> String {
+        name == "10" ? "0" : name
+    }
+
     /// The number of app icons that still fit beside the number in a chip of
     /// `chipWidth`, counting the inset, the label gap and the icon gaps.
     static func iconCountThatFits(chipWidth: CGFloat, nameWidth: CGFloat, iconCount: Int) -> Int {

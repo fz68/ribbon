@@ -205,8 +205,9 @@ final class ChipView: NSView {
             : color
         layer?.backgroundColor = NSColor(argb: backgroundHex(forPressed: false)).cgColor
 
-        if number.stringValue != workspace.name {
-            number.stringValue = workspace.name
+        let displayName = ChipUpdate.displayName(for: workspace.name)
+        if number.stringValue != displayName {
+            number.stringValue = displayName
         }
 
         if reconcileIcons {
