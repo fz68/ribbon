@@ -127,7 +127,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     public override init() {
         super.init()
         touchBar.delegate = self
-        touchBar.defaultItemIdentifiers = [NSTouchBarItem.Identifier("local.ribbon.main"), .flexibleSpace]
+        touchBar.defaultItemIdentifiers = itemIdentifiers
         setupContainer()
         NSWorkspace.shared.notificationCenter.addObserver(
             self,

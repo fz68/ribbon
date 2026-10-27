@@ -42,6 +42,29 @@ extension TouchBarController {
                   (appearance?.rainbow ?? false) ? 1 : 0,
                   appearance?.color?.hexString ?? "-",
                   line.minX, line.minY, line.width, line.height))
+        // Measure how much width the system grants the canvas and whether a system
+        // view occupies the space right of the bar, which the bounds alone cannot show.
+        let frameText: (NSRect?) -> String = { frame in
+            guard let frame else { return "-" }
+            return String(format: "%.0f,%.0f %.0fx%.0f", frame.minX, frame.minY, frame.width, frame.height)
+        }
+        let superview = container.superview
+        let window = container.window
+        let siblings = (superview?.subviews ?? [])
+            .filter { $0 !== container }
+            .map { "\(String(describing: type(of: $0)))(\(frameText($0.frame)))" }
+            .joined(separator: ",")
+        let superviewName = superview.map { String(describing: type(of: $0)) } ?? "-"
+        let windowName = window.map { String(describing: type(of: $0)) } ?? "-"
+        log("canvas superview=\(superviewName)(\(frameText(superview?.frame))) window=\(windowName)(\(frameText(window?.frame))) siblings=\(siblings.isEmpty ? "-" : siblings)")
+        // One level further up: the panel that hosts the item container. Its own
+        // subviews show whether anything else claims the width right of the bar.
+        let parent = superview?.superview
+        let parentName = parent.map { String(describing: type(of: $0)) } ?? "-"
+        let parentSubviews = (parent?.subviews ?? [])
+            .map { "\(String(describing: type(of: $0)))(\(frameText($0.frame)))" }
+            .joined(separator: ",")
+        log("canvas+ parent=\(parentName)(\(frameText(parent?.frame))) subviews=\(parentSubviews.isEmpty ? "-" : parentSubviews)")
     }
 
     func setupContainer() {
