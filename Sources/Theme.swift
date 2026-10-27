@@ -63,7 +63,7 @@ enum Theme {
         static let chipLabelSpacing: CGFloat = 6
         /// Fixed width of every workspace chip, so the chips and the app name
         /// keep their positions when apps open or close.
-        static let chipWidth: CGFloat = 50
+        static let chipWidth: CGFloat = 56
         /// Narrowest a chip may get.
         static let chipMinWidth: CGFloat = 40
         /// Side length of an app icon inside a chip.

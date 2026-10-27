@@ -146,7 +146,8 @@ extension TouchBarController {
     }
 
     private func setupRightCluster() {
-        // Right: brightness, volume, battery and clock.
+        // Right: brightness, volume, battery and clock. Every gap is
+        // `clusterSpacing` except battery-to-clock, which is `microSpacing`.
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = Theme.Layout.clusterSpacing
@@ -177,16 +178,24 @@ extension TouchBarController {
         batteryLabel.lineBreakMode = .byTruncatingTail
         batteryLabel.cell?.wraps = false
 
-        let batteryStack = NSStackView(views: [batteryLabel, batteryBoltView])
+        // Right-align the content in the fixed slot, so a short reading such as
+        // "F" sits against the clock instead of leaving a hole to its right. Both
+        // views go into the trailing gravity area: `addView(_:in:)` is the AppKit
+        // call that places them there (there is no setGravity, and the `views:`
+        // initializer files views under leading gravity).
+        let batteryStack = NSStackView()
         batteryStack.orientation = .horizontal
         batteryStack.alignment = .centerY
         batteryStack.spacing = Theme.Layout.microSpacing
+        batteryStack.distribution = .gravityAreas
+        batteryStack.addView(batteryLabel, in: .trailing)
+        batteryStack.addView(batteryBoltView, in: .trailing)
         batteryStack.translatesAutoresizingMaskIntoConstraints = false
         // Hidden after the stack is built: NSStackView detaches hidden views, and
         // detaching before the bolt has an index would leave the order undefined.
         batteryBoltView.isHidden = true
         // The slot holds the number plus an optional trailing bolt, so its width
-        // is fixed: the buttons to its left never move.
+        // is fixed: the buttons to its left never move, whatever the reading.
         batteryStack.widthAnchor.constraint(equalToConstant: Theme.Layout.batterySlotWidth).isActive = true
 
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
@@ -201,6 +210,10 @@ extension TouchBarController {
         rightStack.addArrangedSubview(volumeDownButton)
         rightStack.addArrangedSubview(volumeUpButton)
         rightStack.addArrangedSubview(batteryStack)
+        // The battery slot is right-aligned, so its trailing edge is the number's
+        // edge: a tighter battery-clock gap closes the space without touching the
+        // other cluster gaps.
+        rightStack.setCustomSpacing(Theme.Layout.microSpacing, after: batteryStack)
         rightStack.addArrangedSubview(timeLabel)
         rightStack.addArrangedSubview(controlStripButton)
     }

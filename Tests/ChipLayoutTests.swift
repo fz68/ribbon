@@ -6,9 +6,9 @@ import Testing
     init() { _ = TestBootstrap.tempRoot }
 
     @Test func testFixedChipWidthFitsTheWidestBuiltInContent() {
-        // At 50 pt the insets leave 34 pt: enough for a three-digit workspace
-        // number, a three-digit name (24.9 pt) fits too, and one 12 pt app icon
-        // still fits beside a single-digit number.
+        // At 56 pt the insets leave 40 pt: enough for a three-digit workspace
+        // number (about 25 pt). Beside a one- or two-digit number one 12 pt app
+        // icon still fits; a three-digit number fills the chip.
         let font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.chipFontSize, weight: .medium)
         for name in ["1", "10", "99", "100"] {
             let nameWidth = (name as NSString).size(withAttributes: [.font: font]).width
