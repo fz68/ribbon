@@ -63,7 +63,7 @@ enum Theme {
         static let chipLabelSpacing: CGFloat = 6
         /// Fixed width of every workspace chip, so the chips and the app name
         /// keep their positions when apps open or close.
-        static let chipWidth: CGFloat = 72
+        static let chipWidth: CGFloat = 40
         /// Narrowest a chip may get.
         static let chipMinWidth: CGFloat = 40
         /// Side length of an app icon inside a chip.
@@ -77,9 +77,6 @@ enum Theme {
         /// Fixed width of the battery slot: it holds either the percentage or the
         /// charging bolt, so the slot never changes width.
         static let batterySlotWidth: CGFloat = 38
-        /// Fixed width of the clock slot, so a longer or shorter clock string
-        /// cannot push the buttons to the left.
-        static let clockWidth: CGFloat = 116
         /// Font size of a chip's workspace number and its placeholder glyph.
         static let chipFontSize: CGFloat = 13
         /// Width of the transient brightness/volume level pill.

@@ -61,10 +61,11 @@ extension TouchBarController {
     private func setupLevelPop() {
         // Added last so the pill floats above the chips. It sits in the blank gap
         // right of the front-app label and left of the brightness buttons,
-        // anchored to the buttons so its position is fixed: the right cluster has
-        // a fixed width now, so the clock and the battery can no longer shift
-        // it. It passes clicks through, so it never swallows a tap meant for a
-        // control underneath it.
+        // anchored to the buttons so it moves with them: only the battery side of
+        // the right cluster is a constant width. The clock is content-sized, so
+        // when the date gains a digit (1月1 -> 12月31) the pill and the buttons
+        // can shift left by a few points at midnight. It passes clicks through, so
+        // it never swallows a tap meant for a control underneath it.
         levelPop.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(levelPop)
         NSLayoutConstraint.activate([
@@ -192,16 +193,8 @@ extension TouchBarController {
         timeLabel.textColor = NSColor(argb: Theme.primaryText)
         timeLabel.alignment = .right
         timeLabel.maximumNumberOfLines = 1
-        // Truncate instead of growing: a wrapping cell ignores lineBreakMode.
-        // Cutting the head keeps the minutes visible when a custom format is
-        // longer than the slot.
-        timeLabel.lineBreakMode = .byTruncatingHead
-        timeLabel.cell?.wraps = false
-        // The fixed slot wins: the label yields to it and truncates instead of fighting it.
-        timeLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        timeLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        // The clock slot is fixed, so the string inside it can only be shorter.
-        timeLabel.widthAnchor.constraint(equalToConstant: Theme.Layout.clockWidth).isActive = true
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
 
         rightStack.addArrangedSubview(brightnessDownButton)
         rightStack.addArrangedSubview(brightnessUpButton)

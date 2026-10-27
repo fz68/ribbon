@@ -10,13 +10,6 @@ import Testing
         NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
     }
 
-    @Test func testClockTextFitsTheClockSlot() {
-        let text = "10月24 周六 11:04"
-        let size = (text as NSString).size(withAttributes: [.font: labelFont()])
-        #expect(size.width <= Theme.Layout.clockWidth,
-                "the built-in clock string fits the fixed clock slot")
-    }
-
     @Test func testBatteryTextFitsTheBatterySlot() {
         let text = "100%"
         let size = (text as NSString).size(withAttributes: [.font: labelFont()])
