@@ -73,12 +73,12 @@ extension TouchBarController {
         log("click workspace \(name)")
         workspaces = workspaces.map { Workspace(name: $0.name, isFocused: $0.name == name, apps: $0.apps) }
         rebuildChips()
-        AeroSpace.focus(name) { succeeded in
+        workspaceBackend.focus(name) { succeeded in
             if !succeeded {
                 log("workspace focus failed: \(name)")
             }
         }
-        // Confirms the optimistic highlight against AeroSpace's own state. The event
+        // Confirms the optimistic highlight against the backend's own state. The event
         // stream normally lands first; this is the fallback for when it does not.
         DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.chipConfirmation) { [weak self] in
             self?.scheduleRefresh()
