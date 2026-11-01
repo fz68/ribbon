@@ -32,25 +32,28 @@ enum ChipUpdate {
         return .restyle(reconcileIcons: apps != iconApps || iconGeneration != iconCacheGeneration)
     }
 
-    /// How many app icons fit next to a label of `labelWidth` inside a chip of
-    /// `chipWidth`, capped at `maxIcons`.
+    /// The number a chip shows for a workspace name.
     ///
-    /// n icons need `chipLabelSpacing + n * iconSize + (n - 1) * microSpacing`
-    /// once the label sits at the chip inset; n = 0 needs none of it. The
-    /// requirement grows with n, so the answer is the largest n that still fits
-    /// the free width, or 0 when even one icon does not.
-    static func iconCount(labelWidth: CGFloat, chipWidth: CGFloat, maxIcons: Int) -> Int {
-        guard maxIcons > 0 else { return 0 }
-        let free = chipWidth - 2 * Theme.Layout.chipInset - labelWidth
-        var count = 0
-        for n in 1...maxIcons {
-            let needed = Theme.Layout.chipLabelSpacing
-                + CGFloat(n) * Theme.Layout.iconSize
-                + CGFloat(n - 1) * Theme.Layout.microSpacing
-            guard needed <= free else { break }
-            count = n
+    /// The mapping mirrors the keyboard: AeroSpace's 10th workspace is reached
+    /// with the 0 key, so it reads "0". Every other name, numeric or not, is
+    /// shown unchanged; the workspace identity itself is never renamed.
+    static func displayName(for name: String) -> String {
+        name == "10" ? "0" : name
+    }
+
+    /// The number of app icons that still fit beside the number in a chip of
+    /// `chipWidth`, counting the inset, the label gap and the icon gaps.
+    static func iconCountThatFits(chipWidth: CGFloat, nameWidth: CGFloat, iconCount: Int) -> Int {
+        let available = chipWidth - Theme.Layout.chipInset * 2 - nameWidth - Theme.Layout.chipLabelSpacing
+        var visible = 0
+        // Each extra icon costs its width plus one gap, so visible + 1 icons
+        // need (visible + 1) * iconSize + visible * microSpacing.
+        while visible < iconCount,
+              CGFloat(visible + 1) * Theme.Layout.iconSize
+                  + CGFloat(visible) * Theme.Layout.microSpacing <= available {
+            visible += 1
         }
-        return count
+        return visible
     }
 
     /// Deterministic djb2 hash of the workspace name, so a chip keeps its

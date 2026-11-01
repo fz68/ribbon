@@ -27,11 +27,24 @@ extension TouchBarController {
         set { UserDefaults.standard.set(newValue, forKey: Self.controlStripDefaultsKey) }
     }
 
+    /// Identifiers for the current mode.
+    ///
+    /// Full mode omits the trailing flexible space so the system grants the
+    /// item the entire canvas (measured 1004pt); the flexible space claimed the
+    /// last few points. Control-strip mode keeps it because the system reserves
+    /// the right edge for the strip.
+    var itemIdentifiers: [NSTouchBarItem.Identifier] {
+        let main = NSTouchBarItem.Identifier("local.ribbon.main")
+        return BarLayout(visible: controlStripVisible) == .strip ? [main, .flexibleSpace] : [main]
+    }
+
     /// Switches between the full width bar and the Control Strip presentation.
     @objc func toggleControlStrip() {
         let next = !controlStripVisible
         controlStripVisible = next
         applyControlStripMode(BarLayout(visible: next))
+        // The identifiers differ per mode, so the next present uses the new list.
+        touchBar.defaultItemIdentifiers = itemIdentifiers
         log(next ? "control strip on" : "control strip off")
         onControlStripStateChanged?(next)
         dismiss()

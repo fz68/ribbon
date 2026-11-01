@@ -60,7 +60,9 @@ extension TouchBarController {
         button.layer?.borderWidth = 1
         button.layer?.borderColor = grey.cgColor
         button.layer?.backgroundColor = NSColor(argb: Theme.controlBackground).cgColor
-        button.widthAnchor.constraint(equalToConstant: Theme.Layout.chipMinWidth).isActive = true
+        // The placeholder takes the same fixed width as a real chip, so the row
+        // does not jump when the first workspace appears.
+        button.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth).isActive = true
         button.heightAnchor.constraint(equalToConstant: Theme.Layout.controlSize).isActive = true
         return button
     }

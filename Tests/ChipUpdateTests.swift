@@ -5,6 +5,15 @@ import Testing
 @Suite(.serialized) final class ChipUpdateTests {
     init() { _ = TestBootstrap.tempRoot }
 
+    @Test func testDisplayNameMapsTheTenthWorkspaceToZero() {
+        #expect(ChipUpdate.displayName(for: "10") == "0",
+                "the 10th workspace reads 0, like the 0 key that reaches it")
+        #expect(ChipUpdate.displayName(for: "1") == "1", "a single digit is unchanged")
+        #expect(ChipUpdate.displayName(for: "9") == "9", "the 9th workspace is unchanged")
+        #expect(ChipUpdate.displayName(for: "main") == "main",
+                "a non-numeric name is untouched")
+    }
+
     @Test func testPlanSkipsIdenticalChip() {
         let ws = Workspace(name: "1", isFocused: true, apps: ["Mail", "Safari"])
         let plan = ChipUpdate.plan(workspace: ws, displayed: ws, apps: ["Mail", "Safari"],
@@ -64,34 +73,38 @@ import Testing
                 "a change past the icon prefix restyles but does not rebuild icons")
     }
 
-    @Test func testIconCountFitsTwoIconsForAShortLabel() {
-        #expect(ChipUpdate.iconCount(labelWidth: 8, chipWidth: 56, maxIcons: 3) == 2,
-                "free = 56 - 16 - 8 = 32, two icons need 6 + 24 + 2 = 32, three need 46")
+    @Test func testIconCountThatFitsFitsWithinDefaultChip() {
+        // 72 - 16 inset - 15.6 label - 6 gap = 34.4 pt for icons: two 12 pt
+        // icons plus one 2 pt gap is 26, three would need 40.
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 72, nameWidth: 15.6, iconCount: 3) == 2,
+                "a full-width chip shows two of three icons")
     }
 
-    @Test func testIconCountFitsOneIconForATwoDigitLabel() {
-        #expect(ChipUpdate.iconCount(labelWidth: 16, chipWidth: 56, maxIcons: 3) == 1,
-                "free = 56 - 16 - 16 = 24, one icon needs 18, two need 32")
+    @Test func testIconCountThatFitsDropsIconsInCompressedChip() {
+        // 55 - 16 - 15.6 - 6 = 17.4 pt: only one 12 pt icon fits.
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 55, nameWidth: 15.6, iconCount: 3) == 1,
+                "a compressed chip keeps only the first icon")
     }
 
-    @Test func testIconCountRespectsThePerWorkspaceCap() {
-        #expect(ChipUpdate.iconCount(labelWidth: 8, chipWidth: 56, maxIcons: 1) == 1,
-                "a cap of one never asks for a second icon")
+    @Test func testIconCountThatFitsKeepsNoIconWhenNameFillsChip() {
+        // 72 - 16 - 50 - 6 = 0 pt: not even one icon fits beside a wide name.
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 72, nameWidth: 50, iconCount: 3) == 0,
+                "a name that fills the chip leaves no room for icons")
     }
 
-    @Test func testIconCountZeroCapShowsNone() {
-        #expect(ChipUpdate.iconCount(labelWidth: 8, chipWidth: 56, maxIcons: 0) == 0,
-                "a cap of zero shows no icons at all")
+    @Test func testIconCountThatFitsHandlesNoIcons() {
+        #expect(ChipUpdate.iconCountThatFits(chipWidth: 72, nameWidth: 15.6, iconCount: 0) == 0,
+                "a chip without icons reports none")
     }
 
-    @Test func testIconCountLongLabelShowsNone() {
-        #expect(ChipUpdate.iconCount(labelWidth: 100, chipWidth: 56, maxIcons: 3) == 0,
-                "free = 56 - 16 - 100 = -60, not even one icon fits")
-    }
-
-    @Test func testIconCountEmptyLabelStopsAtTwoOfThree() {
-        #expect(ChipUpdate.iconCount(labelWidth: 0, chipWidth: 56, maxIcons: 3) == 2,
-                "free = 56 - 16 - 0 = 40, two icons need 32 but three need 46")
+    @Test func testIconCountThatFitsNeverExceedsIconCount() {
+        for count in 0...5 {
+            for width in stride(from: CGFloat(40), through: 200, by: 5) {
+                let visible = ChipUpdate.iconCountThatFits(chipWidth: width, nameWidth: 15.6, iconCount: count)
+                #expect((0...count).contains(visible),
+                        "the visible count stays within the icons the chip actually has")
+            }
+        }
     }
 
     @Test func testColorIndexIsStableAndInRange() {

@@ -44,10 +44,11 @@ enum Theme {
         static let indicatorLineHeight: CGFloat = 2
         /// Corner radius shared by the control buttons and the chips.
         static let cornerRadius: CGFloat = 6
-        // The three constants below share the value 8 today, but they are
+        // clusterGap and chipInset happen to share the value 8, but they are
         // independent: do not merge them back into one constant.
-        /// Inset of the bar from the container's leading and trailing edge.
-        static let barMargin: CGFloat = 8
+        /// Inset of the bar's content from the Touch Bar's edges. 0, so the
+        /// outermost controls sit flush with the edges.
+        static let barMargin: CGFloat = 0
         /// Horizontal gap between two adjacent clusters.
         static let clusterGap: CGFloat = 8
         /// Padding between a chip's own leading edge and its content stack.
@@ -60,11 +61,11 @@ enum Theme {
         static let microSpacing: CGFloat = 2
         /// Gap between a chip's number and its first app icon.
         static let chipLabelSpacing: CGFloat = 6
+        /// Fixed width of every workspace chip, so the chips and the app name
+        /// keep their positions when apps open or close.
+        static let chipWidth: CGFloat = 56
         /// Narrowest a chip may get.
         static let chipMinWidth: CGFloat = 40
-        /// Every chip wants exactly this width so the row can be used by
-        /// muscle memory.
-        static let chipWidth: CGFloat = 56
         /// Side length of an app icon inside a chip.
         static let iconSize: CGFloat = 12
         /// Cap on the front-app label so it never crowds the right cluster.
@@ -73,6 +74,11 @@ enum Theme {
         static let appLabelTrailingPriority: Float = 999
         /// Font size of the labels in the right cluster and the app label.
         static let labelFontSize: CGFloat = 12
+        /// Fixed width of the battery slot: it holds the percentage ("99%" is the
+        /// widest), "F" at full charge, or a number plus a trailing bolt while
+        /// charging, so the slot never changes width. 30 pt is the rounded-up
+        /// worst case ("99" + gap + bolt = 29.5 pt).
+        static let batterySlotWidth: CGFloat = 30
         /// Font size of a chip's workspace number and its placeholder glyph.
         static let chipFontSize: CGFloat = 13
         /// Width of the transient brightness/volume level pill.

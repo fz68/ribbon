@@ -42,6 +42,29 @@ extension TouchBarController {
                   (appearance?.rainbow ?? false) ? 1 : 0,
                   appearance?.color?.hexString ?? "-",
                   line.minX, line.minY, line.width, line.height))
+        // Measure how much width the system grants the canvas and whether a system
+        // view occupies the space right of the bar, which the bounds alone cannot show.
+        let frameText: (NSRect?) -> String = { frame in
+            guard let frame else { return "-" }
+            return String(format: "%.0f,%.0f %.0fx%.0f", frame.minX, frame.minY, frame.width, frame.height)
+        }
+        let superview = container.superview
+        let window = container.window
+        let siblings = (superview?.subviews ?? [])
+            .filter { $0 !== container }
+            .map { "\(String(describing: type(of: $0)))(\(frameText($0.frame)))" }
+            .joined(separator: ",")
+        let superviewName = superview.map { String(describing: type(of: $0)) } ?? "-"
+        let windowName = window.map { String(describing: type(of: $0)) } ?? "-"
+        log("canvas superview=\(superviewName)(\(frameText(superview?.frame))) window=\(windowName)(\(frameText(window?.frame))) siblings=\(siblings.isEmpty ? "-" : siblings)")
+        // One level further up: the panel that hosts the item container. Its own
+        // subviews show whether anything else claims the width right of the bar.
+        let parent = superview?.superview
+        let parentName = parent.map { String(describing: type(of: $0)) } ?? "-"
+        let parentSubviews = (parent?.subviews ?? [])
+            .map { "\(String(describing: type(of: $0)))(\(frameText($0.frame)))" }
+            .joined(separator: ",")
+        log("canvas+ parent=\(parentName)(\(frameText(parent?.frame))) subviews=\(parentSubviews.isEmpty ? "-" : parentSubviews)")
     }
 
     func setupContainer() {
@@ -60,11 +83,12 @@ extension TouchBarController {
 
     private func setupLevelPop() {
         // Added last so the pill floats above the chips. It sits in the blank gap
-        // right of the front-app label and left of the brightness buttons, anchored
-        // to the buttons so its position is stable (rightStack is pinned to the
-        // trailing edge while the label width varies) and so it never covers the
-        // buttons themselves; a max-width label can only have its tail briefly
-        // covered during the 1 s flash.
+        // right of the front-app label and left of the brightness buttons,
+        // anchored to the buttons so it moves with them: only the battery side of
+        // the right cluster is a constant width. The clock is content-sized, so
+        // when the date gains a digit (1月1 -> 12月31) the pill and the buttons
+        // can shift left by a few points at midnight. It passes clicks through, so
+        // it never swallows a tap meant for a control underneath it.
         levelPop.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(levelPop)
         NSLayoutConstraint.activate([
@@ -145,7 +169,8 @@ extension TouchBarController {
     }
 
     private func setupRightCluster() {
-        // Right: brightness, volume, battery and clock.
+        // Right: brightness, volume, battery and clock. Every gap is
+        // `clusterSpacing` except battery-to-clock, which is `microSpacing`.
         rightStack.orientation = .horizontal
         rightStack.alignment = .centerY
         rightStack.spacing = Theme.Layout.clusterSpacing
@@ -172,15 +197,29 @@ extension TouchBarController {
         batteryLabel.textColor = NSColor(argb: Theme.primaryText)
         batteryLabel.alignment = .left
         batteryLabel.maximumNumberOfLines = 1
+        // Truncate instead of growing: a wrapping cell ignores lineBreakMode.
+        batteryLabel.lineBreakMode = .byTruncatingTail
+        batteryLabel.cell?.wraps = false
 
-        let batteryStack = NSStackView(views: [batteryBoltView, batteryLabel])
+        // Right-align the content in the fixed slot, so a short reading such as
+        // "F" sits against the clock instead of leaving a hole to its right. Both
+        // views go into the trailing gravity area: `addView(_:in:)` is the AppKit
+        // call that places them there (there is no setGravity, and the `views:`
+        // initializer files views under leading gravity).
+        let batteryStack = NSStackView()
         batteryStack.orientation = .horizontal
         batteryStack.alignment = .centerY
         batteryStack.spacing = Theme.Layout.microSpacing
+        batteryStack.distribution = .gravityAreas
+        batteryStack.addView(batteryLabel, in: .trailing)
+        batteryStack.addView(batteryBoltView, in: .trailing)
         batteryStack.translatesAutoresizingMaskIntoConstraints = false
         // Hidden after the stack is built: NSStackView detaches hidden views, and
         // detaching before the bolt has an index would leave the order undefined.
         batteryBoltView.isHidden = true
+        // The slot holds the number plus an optional trailing bolt, so its width
+        // is fixed: the buttons to its left never move, whatever the reading.
+        batteryStack.widthAnchor.constraint(equalToConstant: Theme.Layout.batterySlotWidth).isActive = true
 
         timeLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
         timeLabel.textColor = NSColor(argb: Theme.primaryText)
@@ -194,6 +233,10 @@ extension TouchBarController {
         rightStack.addArrangedSubview(volumeDownButton)
         rightStack.addArrangedSubview(volumeUpButton)
         rightStack.addArrangedSubview(batteryStack)
+        // The battery slot is right-aligned, so its trailing edge is the number's
+        // edge: a tighter battery-clock gap closes the space without touching the
+        // other cluster gaps.
+        rightStack.setCustomSpacing(Theme.Layout.microSpacing, after: batteryStack)
         rightStack.addArrangedSubview(timeLabel)
         rightStack.addArrangedSubview(controlStripButton)
     }

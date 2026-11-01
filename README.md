@@ -8,8 +8,8 @@ or Nehir), the front app name, brightness, volume, battery, a clock and a Contro
 A 2 pt line along the very bottom edge shows the selected input source.
 
 ```
- [prev] [play] [next] | 1 [icons] 2 [icons] 3 [icons] | Safari | sun- sun+ vol- vol+ 87% 10月24 周六 11:04 [strip]
- =================================================================================================================
+[prev] [play] [next] | 1 2 3 | Safari | sun- sun+ vol- vol+ [87%] 10月24 周六 11:04 [strip]
+=====================================================================================================================
    2 pt input source line (hidden for plain keyboard layouts, rainbow for Doubao)
 ```
 
@@ -17,16 +17,26 @@ A 2 pt line along the very bottom edge shows the selected input source.
 
 - Media previous / play-pause / next. Uses `nowplaying-cli` when it is installed and falls back to
   the standard media keys otherwise.
-- One chip per workspace of the active window manager (AeroSpace or Nehir): every chip is the same
-  fixed width, and the number of app icons that fit beside the name adapts to that width (usually
-  one or two). The focused chip is a gold pill with dark text; each other chip keeps a
-  stable colour derived from its workspace name. Tap a chip to switch workspace.
+- One chip per workspace of the active window manager (AeroSpace or Nehir). Every chip has the same
+  fixed 56 pt width, so the chips and the front app name keep their positions when apps open or
+  close. A chip shows its workspace name, except that the 10th workspace reads `0`, like the 0 key
+  that reaches it. The number of app icons that fit beside the name follows from that width, so a
+  chip shows the first app open on its workspace: a one- or two-digit name leaves room for that
+  icon, a three-digit name fills the chip, and a longer name truncates. The focused chip is a gold
+  pill with dark text; each other chip keeps a stable colour derived from its workspace name. Tap a
+  chip to switch workspace.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps). A small level pill
   flashes in the gap between the front app name and the brightness buttons on every step.
 - Battery percentage, and a clock in Chinese format `M月d EEE HH:mm` (for example
   `10月24 周六 11:04`). The format and locale can be customized via `clock.json` or picked from
-  `menu-bar icon > Clock Format` (see Configuration).
+  `menu-bar icon > Clock Format` (see Configuration). The battery sits in a fixed 30 pt slot with
+  its content right-aligned, so the buttons never move and a short reading such as `F` sits against
+  the clock: it shows `87%`, `F` at full charge, `87⚡` while charging (the bolt replaces the `%`
+  sign and follows the number) and `F⚡` when it is full and charging. The battery-clock gap is a
+  constant 2 pt, unlike the 6 pt between the other controls. The clock is
+  sized to its text: its width changes only when the date gains a digit (for example `1月1` ->
+  `12月31`), which can shift the buttons left by a few points at midnight.
 - Control Strip toggle. Full-width mode uses placement 1 and hides the right Control Strip; strip
   mode uses placement 0, keeps the Control Strip and hides media, app name, brightness and volume.
   The mode is persisted in UserDefaults under `controlStripVisible`.
@@ -34,6 +44,8 @@ A 2 pt line along the very bottom edge shows the selected input source.
   layouts, drawn as a rainbow for Doubao, and drawn in a configurable colour for other input
   methods. The edge the line is drawn on is switchable between top and bottom from
   `menu-bar icon > IME Line Position`.
+- The bar's content is flush with the Touch Bar's edges: there is no left or right margin, so the
+  outermost controls sit exactly at the ends of the bar.
 
 ## Keyboard shortcuts
 
@@ -58,9 +70,9 @@ backAndForth = "Option+Tab"
 
 Nehir spells the modifiers `Control`, `Option`, `Shift`, `Command` and `Hyper`; `alt`, `cmd` and the
 symbolic variants are not understood, and a line it cannot parse is dropped without a warning, so
-a mistyped chord fails silently. `{N}` expands to the digits 1 to 9, which leaves a tenth workspace
-without a shortcut of its own. A bare `Option` chord is registered globally and therefore shadows
-the same chord inside other apps; pick a heavier modifier if that gets in the way.
+a mistyped chord fails silently. `{N}` expands to the digits 1 to 9. A bare `Option` chord is
+registered globally and therefore shadows the same chord inside other apps; pick a heavier modifier
+if that gets in the way.
 
 ## Requirements
 
@@ -285,13 +297,15 @@ nor distributed through the App Store.
   `/usr/local/bin`, `~/.local/bin` and `~/bin`. The `nehirctl` protocol is explicitly unstable, so a
   Nehir upgrade can break the integration.
 - Nehir 0.5.1 expands the numeric hotkey groups in `hotkeys.toml` only up to workspace 9, so a tenth
-  workspace has no keyboard shortcut of its own; the chip text is the window manager's workspace
-  display name.
-- AeroSpace has no window-closed event, so closing a background window can leave its icon visible
-  until the next event or the 30 s refresh.
-- Every chip keeps the same fixed width (56 pt) so the row can be used by muscle memory. When the
-  chip row outgrows the bar, chips compress evenly and their names truncate, but they stay equal to
-  each other; beyond roughly a dozen workspaces the row can still crowd the right cluster.
+  workspace has no keyboard shortcut of its own.
+- AeroSpace has no window-closed event, so closing a background window can leave its icon state
+  stale until the next event or the 30 s refresh, and a stale icon can stay visible until then.
+- Every chip is 56 pt wide so the row can be used by muscle memory. When the row outgrows the bar
+  the chips compress evenly (down to 40 pt) and their names truncate, but they stay equal to each
+  other; beyond roughly a dozen workspaces the row can still crowd the right cluster (a
+  10-workspace row is 10*56 + 9*4 = 596 pt of the ~635 pt budget, and an 11th would need 656 pt).
+  The text on a chip is the window manager's workspace name, except that the 10th workspace reads
+  `0`.
 - The full-width layout assumes the 13-inch panel: the app requests 1004 pt and the system grants
   996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and
