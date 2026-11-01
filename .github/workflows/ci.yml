@@ -10,7 +10,7 @@ jobs:
     # SwiftPM build targets the host architecture, so the runner arch is what gets tested.
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Select Xcode
         # Pinned: lint runs with -warnings-as-errors, so a runner image update
         # that adds a diagnostic would fail CI without a code change.
