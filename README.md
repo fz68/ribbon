@@ -1,11 +1,11 @@
 # Ribbon
 
-A Touch Bar ribbon for AeroSpace.
+A Touch Bar ribbon for AeroSpace or Nehir.
 
 Ribbon is a menu-bar-only macOS app that replaces the app strip on the Touch Bar with a single
-full-width bar: media transport, one chip per AeroSpace workspace, the front app name, brightness,
-volume, battery, a clock and a Control Strip toggle. A 2 pt line along the very bottom edge shows
-the selected input source.
+full-width bar: media transport, one chip per workspace of the active window manager (AeroSpace
+or Nehir), the front app name, brightness, volume, battery, a clock and a Control Strip toggle.
+A 2 pt line along the very bottom edge shows the selected input source.
 
 ```
  [prev] [play] [next] | 1 [icons] 2 [icons] 3 [icons] | Safari | sun- sun+ vol- vol+ 87% 10月24 周六 11:04 [strip]
@@ -17,9 +17,10 @@ the selected input source.
 
 - Media previous / play-pause / next. Uses `nowplaying-cli` when it is installed and falls back to
   the standard media keys otherwise.
-- One chip per AeroSpace workspace: workspace name plus up to three app icons. The focused chip is
-  a gold pill with dark text; each other chip keeps a stable colour derived from its workspace name.
-  Tap a chip to switch workspace.
+- One chip per workspace of the active window manager (AeroSpace or Nehir): every chip is the same
+  fixed width, and the number of app icons that fit beside the name adapts to that width (usually
+  one or two). The focused chip is a gold pill with dark text; each other chip keeps a
+  stable colour derived from its workspace name. Tap a chip to switch workspace.
 - Front app name, immediately right of the workspace chips.
 - Brightness down / up (10% steps) and output volume down / up (5% steps). A small level pill
   flashes in the gap between the front app name and the brightness buttons on every step.
@@ -34,15 +35,44 @@ the selected input source.
   methods. The edge the line is drawn on is switchable between top and bottom from
   `menu-bar icon > IME Line Position`.
 
+## Keyboard shortcuts
+
+Ribbon registers no keyboard shortcuts of its own: the workspace keys belong to the window manager,
+so they keep working whether or not Ribbon is running. The bindings that mirror the usual AeroSpace
+setup are:
+
+| Action | AeroSpace | Nehir |
+| --- | --- | --- |
+| Switch to workspace 1-9 | `alt-1` .. `alt-9` | `Option+1` .. `Option+9` |
+| Move the focused window to workspace 1-9 | `alt-shift-1` .. `alt-shift-9` | `Option+Shift+1` .. `Option+Shift+9` |
+| Toggle between the last two workspaces | `alt-tab` | `Option+Tab` |
+
+In Nehir they live in `~/.config/nehir/hotkeys.toml`:
+
+```toml
+[workspace]
+switch = "Option+{N}"
+moveTo = "Option+Shift+{N}"
+backAndForth = "Option+Tab"
+```
+
+Nehir spells the modifiers `Control`, `Option`, `Shift`, `Command` and `Hyper`; `alt`, `cmd` and the
+symbolic variants are not understood, and a line it cannot parse is dropped without a warning, so
+a mistyped chord fails silently. `{N}` expands to the digits 1 to 9, which leaves a tenth workspace
+without a shortcut of its own. A bare `Option` chord is registered globally and therefore shadows
+the same chord inside other apps; pick a heavier modifier if that gets in the way.
+
 ## Requirements
 
 - A MacBook Pro with a Touch Bar. Tested on a 13-inch M1 2020 running macOS 15.8.2; the deployment
   target is macOS 13.0.
 - [AeroSpace](https://github.com/nikitabobko/AeroSpace) running, with its CLI at
   `/opt/homebrew/bin/aerospace` or `/usr/local/bin/aerospace`, **or**
-  [Nehir](https://github.com/apphane-dev/nehir) with IPC enabled and its
-  `nehirctl` CLI installed; a responding AeroSpace wins when both are installed, and a dead
-  AeroSpace daemon falls back to Nehir.
+  [Nehir](https://github.com/apphane-dev/nehir) 0.5.1 or newer with IPC enabled, and its `nehirctl`
+  CLI in `PATH`, `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin` or `~/bin`. Nehir has a
+  workspace bar of its own in the menu bar; turn it off if you want the Touch Bar to be the only
+  place you switch workspaces (see Known limits). A responding AeroSpace wins when both are
+  installed, and a dead AeroSpace daemon falls back to Nehir.
 - Optional: `nowplaying-cli` for media state (`brew install nowplaying-cli`). Without it, Ribbon
   posts the system media keys instead.
 - Xcode or the Command Line Tools with Swift 5.9 or newer (`swift`, `codesign`).
@@ -109,6 +139,9 @@ Alternatively let AeroSpace start it:
 ```toml
 after-startup-command = ['exec-and-forget /bin/bash -c "sleep 1; open /Applications/Ribbon.app"']
 ```
+
+Either window manager will do, as long as Ribbon starts after it. With Nehir, enable IPC before you
+launch Ribbon: it probes for IPC once at launch and does not re-check.
 
 Ribbon has no Dock icon. Its menu-bar item shows the Ribbon logo and offers Re-present, Refresh,
 Show/Hide Control Strip, Set App+ControlStrip mode, IME Color, Clock Format, and Quit.
@@ -215,7 +248,15 @@ hierarchy be hosted in the bar instead of only `NSTouchBarItem`s.
 - Workspaces come from the AeroSpace CLI: a refresh runs two calls, `list-workspaces` and
   `list-windows`. `aerospace subscribe` events (focused workspace, window detected, focused monitor,
   focus changed) trigger refreshes, and a 30 s timer re-reads state when no event arrives.
-- With Nehir, Ribbon reads `nehirctl query workspaces` / `query windows` (JSON, keyed by Nehir's stable raw workspace IDs; the highlighted chip follows Nehir's `is-current`, the active workspace of the interaction monitor), focuses by resolving unambiguous chip labels to raw workspace IDs via `nehirctl workspace focus-name`, and monitors via `nehirctl subscribe workspace-bar,windows-changed`, falling back to 1 s polling when Nehir's IPC is off. Verified against Nehir's CLI source as of 2026-11.
+- With Nehir, a refresh runs two queries:
+  `nehirctl query workspaces --fields raw-name,display-name,is-current --format json` and
+  `nehirctl query windows --fields workspace,app --format json`. The JSON is camelCase (`rawName`,
+  `displayName`, `isCurrent`) with the arrays at `result.payload.workspaces` and
+  `result.payload.windows`; the highlighted chip follows `isCurrent`. A tap resolves the chip label
+  to a raw workspace id and calls `nehirctl workspace focus-name <raw-id>`. Changes are picked up
+  from `nehirctl subscribe workspace-bar,windows-changed --no-send-initial`, falling back to 1 s
+  polling when the subscription cannot be started. Measured on 2026-11-01, Nehir 0.5.1, IPC
+  protocol version 6.
 - Media uses `nowplaying-cli` (`get-raw`, `togglePlayPause`, `next`, `previous`), discovered in the
   Homebrew prefixes and then on `PATH`.
 
@@ -226,17 +267,31 @@ nor distributed through the App Store.
 
 - The private DFRFoundation and DisplayServices APIs can break on any macOS update.
 - Only one system-modal Touch Bar host can exist at a time; another app presenting one wins.
-- Two window managers supported, picked at launch (a responding AeroSpace wins, else Nehir, else the
-  AeroSpace placeholder behavior; a dead AeroSpace daemon falls back to Nehir); Nehir needs IPC
-  enabled (Nehir Settings -> General, or a `[general]` table with `ipcEnabled = true` in
-  `~/.config/nehir/settings.toml`; a bare top-level key does not enable IPC) and `nehirctl` on
-  `PATH`, `~/.local/bin` or `~/bin`; Ribbon probes IPC once at launch, so enable IPC before
-  launching (or relaunch Ribbon after enabling it); without IPC Ribbon falls back to polling; the
-  `nehirctl` protocol is explicitly unstable, so a Nehir upgrade can break the integration.
+- Two window managers are supported and the backend is picked at launch: a responding AeroSpace
+  daemon wins, otherwise Nehir, and with neither Ribbon keeps the AeroSpace placeholder behavior. A
+  dead AeroSpace daemon falls back to Nehir.
+- Nehir needs IPC enabled before Ribbon starts (Nehir Settings -> General, or `ipcEnabled = true`
+  in the `[general]` table of `~/.config/nehir/settings.toml`; a bare top-level key does not enable
+  IPC). Nehir writes its in-memory state back over `settings.toml` when it quits, so hand edits made
+  while it is running are lost - quit Nehir, edit the file, then start Nehir again. Ribbon probes
+  IPC once at launch, so enable IPC before launching (or relaunch Ribbon after enabling it).
+- With IPC off entirely every `nehirctl` call fails with `transport_failure`, Ribbon gets no
+  workspace list and the Touch Bar shows a single `?` placeholder chip. The 1 s polling fallback
+  only covers a subscription that cannot be started; it does not recover a dead IPC endpoint.
+- Nehir keeps a workspace bar of its own in the menu bar. To turn it off for good set
+  `enabled = false` in the `[workspaceBar]` table of the same `settings.toml`, with the same
+  quit-edit-restart order; `nehirctl command toggle-workspace-bar` only hides it for the current run
+  and Nehir brings it back on restart. Ribbon looks for `nehirctl` in `PATH`, `/opt/homebrew/bin`,
+  `/usr/local/bin`, `~/.local/bin` and `~/bin`. The `nehirctl` protocol is explicitly unstable, so a
+  Nehir upgrade can break the integration.
+- Nehir 0.5.1 expands the numeric hotkey groups in `hotkeys.toml` only up to workspace 9, so a tenth
+  workspace has no keyboard shortcut of its own; the chip text is the window manager's workspace
+  display name.
 - AeroSpace has no window-closed event, so closing a background window can leave its icon visible
   until the next event or the 30 s refresh.
-- When the chip row outgrows the bar, chips compress and their names truncate; beyond roughly a
-  dozen workspaces the row can still crowd the right cluster.
+- Every chip keeps the same fixed width (56 pt) so the row can be used by muscle memory. When the
+  chip row outgrows the bar, chips compress evenly and their names truncate, but they stay equal to
+  each other; beyond roughly a dozen workspaces the row can still crowd the right cluster.
 - The full-width layout assumes the 13-inch panel: the app requests 1004 pt and the system grants
   996 pt. Strip mode uses 680 pt. The 1085 pt panels of the 15-inch and 16-inch models are untested.
 - On some macOS 26/27 builds the Touch Bar can stop updating; `killall ControlStrip` and
@@ -262,3 +317,5 @@ Ribbon is not affiliated with Apple, AeroSpace or Pock.
 ## License
 
 MIT. See [LICENSE](LICENSE). Copyright (c) 2026 FanZhen.
+
+Last reviewed 2026-11-01 against AeroSpace and Nehir 0.5.1 (IPC protocol version 6).
