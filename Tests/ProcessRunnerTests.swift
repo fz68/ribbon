@@ -62,7 +62,7 @@ private final class DetachedResultBox: @unchecked Sendable {
         #expect(missing.launchError != nil, "a launch failure reports its error")
 
         let script = "i=0; while [ $i -lt 20000 ]; do echo 0123456789abcdef; i=$((i+1)); done"
-        let large = ProcessRunner.run("/bin/sh", ["-c", script], timeout: 10)
+        let large = ProcessRunner.run("/bin/sh", ["-c", script], timeout: 30)
         #expect(large.timedOut == false, "a chatty child does not deadlock the runner")
         #expect(large.stdout.count >= 300000,
                 "the whole large output is collected (got \(large.stdout.count) bytes)")

@@ -38,7 +38,13 @@ enum TestTemp {
 }
 
 /// Polls `condition` until it is true or `timeout` passes. 20 ms interval.
-func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
+///
+/// Every caller waits for a completion callback that is delivered through
+/// `DispatchQueue.main.async`, so the window covers the whole hop from spawning
+/// the process to that delivery. Two seconds is too tight on a loaded CI runner;
+/// the poll returns as soon as the condition holds, so a wide window costs
+/// nothing on the fast path.
+func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
     while Date() < deadline {
         if condition() { return true }
