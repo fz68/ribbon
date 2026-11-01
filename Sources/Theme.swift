@@ -62,10 +62,9 @@ enum Theme {
         static let chipLabelSpacing: CGFloat = 6
         /// Narrowest a chip may get.
         static let chipMinWidth: CGFloat = 40
-        /// Widest a chip may get.
-        static let chipMaxWidth: CGFloat = 88
-        /// Width a chip adds around its measured content.
-        static let chipWidthPadding: CGFloat = 16
+        /// Every chip wants exactly this width so the row can be used by
+        /// muscle memory.
+        static let chipWidth: CGFloat = 56
         /// Side length of an app icon inside a chip.
         static let iconSize: CGFloat = 12
         /// Cap on the front-app label so it never crowds the right cluster.

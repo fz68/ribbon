@@ -64,21 +64,34 @@ import Testing
                 "a change past the icon prefix restyles but does not rebuild icons")
     }
 
-    @Test func testChipWidthClampsLow() {
-        #expect(ChipUpdate.chipWidth(forContentWidth: 10) == Theme.Layout.chipMinWidth,
-                "narrow content clamps to the minimum chip width")
-        #expect(ChipUpdate.chipWidth(forContentWidth: 24) == Theme.Layout.chipMinWidth,
-                "content exactly at min minus padding lands on the minimum")
+    @Test func testIconCountFitsTwoIconsForAShortLabel() {
+        #expect(ChipUpdate.iconCount(labelWidth: 8, chipWidth: 56, maxIcons: 3) == 2,
+                "free = 56 - 16 - 8 = 32, two icons need 6 + 24 + 2 = 32, three need 46")
     }
 
-    @Test func testChipWidthClampsHigh() {
-        #expect(ChipUpdate.chipWidth(forContentWidth: 1000) == Theme.Layout.chipMaxWidth,
-                "wide content clamps to the maximum chip width")
+    @Test func testIconCountFitsOneIconForATwoDigitLabel() {
+        #expect(ChipUpdate.iconCount(labelWidth: 16, chipWidth: 56, maxIcons: 3) == 1,
+                "free = 56 - 16 - 16 = 24, one icon needs 18, two need 32")
     }
 
-    @Test func testChipWidthAddsPaddingInBetween() {
-        #expect(ChipUpdate.chipWidth(forContentWidth: 30) == 46,
-                "mid-range content gets the padding added (30 + 16)")
+    @Test func testIconCountRespectsThePerWorkspaceCap() {
+        #expect(ChipUpdate.iconCount(labelWidth: 8, chipWidth: 56, maxIcons: 1) == 1,
+                "a cap of one never asks for a second icon")
+    }
+
+    @Test func testIconCountZeroCapShowsNone() {
+        #expect(ChipUpdate.iconCount(labelWidth: 8, chipWidth: 56, maxIcons: 0) == 0,
+                "a cap of zero shows no icons at all")
+    }
+
+    @Test func testIconCountLongLabelShowsNone() {
+        #expect(ChipUpdate.iconCount(labelWidth: 100, chipWidth: 56, maxIcons: 3) == 0,
+                "free = 56 - 16 - 100 = -60, not even one icon fits")
+    }
+
+    @Test func testIconCountEmptyLabelStopsAtTwoOfThree() {
+        #expect(ChipUpdate.iconCount(labelWidth: 0, chipWidth: 56, maxIcons: 3) == 2,
+                "free = 56 - 16 - 0 = 40, two icons need 32 but three need 46")
     }
 
     @Test func testColorIndexIsStableAndInRange() {

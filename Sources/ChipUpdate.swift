@@ -32,11 +32,25 @@ enum ChipUpdate {
         return .restyle(reconcileIcons: apps != iconApps || iconGeneration != iconCacheGeneration)
     }
 
-    /// The chip width for a measured stack width: content plus padding,
-    /// clamped to the narrowest and widest chip metrics.
-    static func chipWidth(forContentWidth contentWidth: CGFloat) -> CGFloat {
-        max(Theme.Layout.chipMinWidth,
-            min(Theme.Layout.chipMaxWidth, contentWidth + Theme.Layout.chipWidthPadding))
+    /// How many app icons fit next to a label of `labelWidth` inside a chip of
+    /// `chipWidth`, capped at `maxIcons`.
+    ///
+    /// n icons need `chipLabelSpacing + n * iconSize + (n - 1) * microSpacing`
+    /// once the label sits at the chip inset; n = 0 needs none of it. The
+    /// requirement grows with n, so the answer is the largest n that still fits
+    /// the free width, or 0 when even one icon does not.
+    static func iconCount(labelWidth: CGFloat, chipWidth: CGFloat, maxIcons: Int) -> Int {
+        guard maxIcons > 0 else { return 0 }
+        let free = chipWidth - 2 * Theme.Layout.chipInset - labelWidth
+        var count = 0
+        for n in 1...maxIcons {
+            let needed = Theme.Layout.chipLabelSpacing
+                + CGFloat(n) * Theme.Layout.iconSize
+                + CGFloat(n - 1) * Theme.Layout.microSpacing
+            guard needed <= free else { break }
+            count = n
+        }
+        return count
     }
 
     /// Deterministic djb2 hash of the workspace name, so a chip keeps its

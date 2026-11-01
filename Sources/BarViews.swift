@@ -143,7 +143,7 @@ final class ChipView: NSView {
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.chipInset),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
             // Caps the content stack so an over-long name truncates with an
-            // ellipsis inside the 88 pt chip instead of spilling and clipping.
+            // ellipsis inside the 56 pt chip instead of spilling and clipping.
             contentTrailing,
             button.leadingAnchor.constraint(equalTo: leadingAnchor),
             button.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -151,17 +151,16 @@ final class ChipView: NSView {
             button.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        // Width is content driven. update() writes this constraint's constant
-        // instead of adding and dropping a width constraint on every rebuild.
-        // The wanted width yields to crowding: when the chip row outgrows the bar,
-        // chips compress (long names truncate) instead of overlapping the right
-        // cluster. The floor and cap below stay required, so a chip never leaves
-        // 40...88 pt.
-        widthConstraint = widthAnchor.constraint(equalToConstant: 0)
+        // Every chip asks for the same width so the row can be used by muscle
+        // memory. The wanted width yields to crowding: when the chip row
+        // outgrows the bar, chips compress evenly (long names truncate) instead
+        // of overlapping the right cluster. The floor and cap below stay
+        // required, so a chip never leaves 40...56 pt.
+        widthConstraint = widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth)
         widthConstraint.priority = NSLayoutConstraint.Priority(750)
         widthConstraint.isActive = true
         widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.Layout.chipMinWidth).isActive = true
-        widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.chipMaxWidth).isActive = true
+        widthAnchor.constraint(lessThanOrEqualToConstant: Theme.Layout.chipWidth).isActive = true
         heightAnchor.constraint(equalToConstant: Theme.Layout.controlSize).isActive = true
 
         update(workspace: workspace, index: index)
@@ -182,7 +181,15 @@ final class ChipView: NSView {
         // Written before the early-out so the tag is correct on every call.
         button.tag = index
 
-        let apps = Array(workspace.apps.prefix(AeroSpace.maxAppsPerWorkspace))
+        // Written before the early-out too: on a skip the workspace equals the
+        // displayed one, so this assignment sets the same string and is a no-op.
+        number.stringValue = workspace.name
+        let labelWidth = number.fittingSize.width
+        let maxIcons = AeroSpace.maxAppsPerWorkspace
+        let apps = Array(workspace.apps.prefix(ChipUpdate.iconCount(
+            labelWidth: labelWidth,
+            chipWidth: Theme.Layout.chipWidth,
+            maxIcons: maxIcons)))
         // A generation bump only invalidates icons, yet the wider early-out
         // re-runs the restyle below; it is idempotent and cheap by design.
         let plan = ChipUpdate.plan(
@@ -235,12 +242,8 @@ final class ChipView: NSView {
             stack.setCustomSpacing(Theme.Layout.chipLabelSpacing, after: number)
         }
 
-        // Measure with the chip parked at its cap first: the trailing content
-        // constraint then reads an over-long name as "cap it" instead of echoing
-        // back whatever width crowding last squeezed the chip to.
-        widthConstraint.constant = Theme.Layout.chipMaxWidth
-        let contentWidth = stack.fittingSize.width
-        widthConstraint.constant = ChipUpdate.chipWidth(forContentWidth: contentWidth)
+        // The width is fixed, so there is nothing left to measure here.
+        widthConstraint.constant = Theme.Layout.chipWidth
     }
 
     required init?(coder: NSCoder) {
