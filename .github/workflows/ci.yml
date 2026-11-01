@@ -6,9 +6,9 @@ on:
 
 jobs:
   build:
-    # MUST be an arm64 runner: the Makefile hardcodes -target arm64-apple-macosx13.0,
-    # so the x86_64 macos-13 runners would fail to link.
-    runs-on: macos-14
+    # MUST be an arm64 runner: the project only supports Apple silicon, and the
+    # SwiftPM build targets the host architecture, so the runner arch is what gets tested.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
