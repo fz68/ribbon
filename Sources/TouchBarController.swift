@@ -24,6 +24,8 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     let container = BarContainer(frame: NSRect(x: 0, y: 0, width: Theme.Layout.fullWidth, height: Theme.Layout.containerHeight))
     let leftStack = NSStackView()
     let workQueue = DispatchQueue(label: "local.ribbon.refresh")
+    /// Picked once at launch; AeroSpace first so existing users never change.
+    let workspaceBackend: WorkspaceBackend = WorkspaceBackendFactory.make()
     var workspaces: [Workspace] = []
     var pendingRefresh: DispatchWorkItem?
     var refreshTimer: Timer?
@@ -142,7 +144,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
             name: NSWorkspace.didWakeNotification,
             object: nil
         )
-        AeroSpace.startMonitoring { [weak self] in
+        workspaceBackend.startMonitoring { [weak self] in
             self?.scheduleRefresh()
         }
         scheduleRefresh()
@@ -229,7 +231,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         levelPopTimer?.invalidate()
         levelPopTimer = nil
         imeWatcher.stop()
-        AeroSpace.stopMonitoring()
+        workspaceBackend.stopMonitoring()
         dismiss()
         log("shutting down")
     }
@@ -240,7 +242,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         guard !didShutdown else { return }
         workQueue.async { [weak self] in
             guard let self else { return }
-            let result = AeroSpace.list()
+            let result = workspaceBackend.list()
             DispatchQueue.main.async {
                 guard let result else {
                     if self.workspaces.isEmpty {
@@ -273,7 +275,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
             guard let self else { return }
             self.dismiss()
             self.present()
-            AeroSpace.restartMonitoring()
+            workspaceBackend.restartMonitoring()
             log("wake re-present")
         }
     }

@@ -39,7 +39,10 @@ the selected input source.
 - A MacBook Pro with a Touch Bar. Tested on a 13-inch M1 2020 running macOS 15.8.2; the deployment
   target is macOS 13.0.
 - [AeroSpace](https://github.com/nikitabobko/AeroSpace) running, with its CLI at
-  `/opt/homebrew/bin/aerospace` or `/usr/local/bin/aerospace`.
+  `/opt/homebrew/bin/aerospace` or `/usr/local/bin/aerospace`, **or**
+  [Nehir](https://github.com/apphane-dev/nehir) with IPC enabled and its
+  `nehirctl` CLI installed; a responding AeroSpace wins when both are installed, and a dead
+  AeroSpace daemon falls back to Nehir.
 - Optional: `nowplaying-cli` for media state (`brew install nowplaying-cli`). Without it, Ribbon
   posts the system media keys instead.
 - Xcode or the Command Line Tools with Swift 5.9 or newer (`swift`, `codesign`).
@@ -212,6 +215,7 @@ hierarchy be hosted in the bar instead of only `NSTouchBarItem`s.
 - Workspaces come from the AeroSpace CLI: a refresh runs two calls, `list-workspaces` and
   `list-windows`. `aerospace subscribe` events (focused workspace, window detected, focused monitor,
   focus changed) trigger refreshes, and a 30 s timer re-reads state when no event arrives.
+- With Nehir, Ribbon reads `nehirctl query workspaces` / `query windows` (JSON, keyed by Nehir's stable raw workspace IDs; the highlighted chip follows Nehir's `is-current`, the active workspace of the interaction monitor), focuses by resolving unambiguous chip labels to raw workspace IDs via `nehirctl workspace focus-name`, and monitors via `nehirctl subscribe workspace-bar,windows-changed`, falling back to 1 s polling when Nehir's IPC is off. Verified against Nehir's CLI source as of 2026-11.
 - Media uses `nowplaying-cli` (`get-raw`, `togglePlayPause`, `next`, `previous`), discovered in the
   Homebrew prefixes and then on `PATH`.
 
@@ -222,7 +226,13 @@ nor distributed through the App Store.
 
 - The private DFRFoundation and DisplayServices APIs can break on any macOS update.
 - Only one system-modal Touch Bar host can exist at a time; another app presenting one wins.
-- AeroSpace only. There is no support for other window managers.
+- Two window managers supported, picked at launch (a responding AeroSpace wins, else Nehir, else the
+  AeroSpace placeholder behavior; a dead AeroSpace daemon falls back to Nehir); Nehir needs IPC
+  enabled (Nehir Settings -> General, or a `[general]` table with `ipcEnabled = true` in
+  `~/.config/nehir/settings.toml`; a bare top-level key does not enable IPC) and `nehirctl` on
+  `PATH`, `~/.local/bin` or `~/bin`; Ribbon probes IPC once at launch, so enable IPC before
+  launching (or relaunch Ribbon after enabling it); without IPC Ribbon falls back to polling; the
+  `nehirctl` protocol is explicitly unstable, so a Nehir upgrade can break the integration.
 - AeroSpace has no window-closed event, so closing a background window can leave its icon visible
   until the next event or the 30 s refresh.
 - When the chip row outgrows the bar, chips compress and their names truncate; beyond roughly a
@@ -242,6 +252,8 @@ nor distributed through the App Store.
   system-modal presentation approach. See `THIRD_PARTY_NOTICES.md`.
 - ShowyEdge for the input-source line inspiration.
 - AeroSpace for workspace control and events.
+- Nehir (https://github.com/apphane-dev/nehir) for workspace control and events as the second
+  supported window manager.
 - nowplaying-cli for media state.
 - The Tokyo Night palette for colour inspiration.
 
