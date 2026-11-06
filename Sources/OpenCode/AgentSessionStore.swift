@@ -30,6 +30,9 @@ struct AgentSession: Equatable {
     var pending: [PendingRequest]
     /// Last time any event touched this session.
     var lastSeen: Date
+    /// The main session that owns this subagent session; nil for a top-level
+    /// session. Filled from the session list and from `session.created` events.
+    var parentID: String? = nil
 }
 
 /// What the chip should draw.
@@ -68,6 +71,11 @@ struct AgentSessionStore {
             ensureSession(id: id, directory: event.directory, now: now)
             if let name = Self.shortName(directory: event.directory) {
                 sessions[id]?.shortName = name
+            }
+            // Learn the parent when the event carries one. A nil must not clear
+            // a parent learned earlier (from the event or a reconcile).
+            if let parentID = event.parentID {
+                sessions[id]?.parentID = parentID
             }
         case "session.deleted":
             guard let id = event.sessionID else { return }
@@ -157,10 +165,18 @@ struct AgentSessionStore {
     /// This is a method rather than the plan's `var chip` so the three-second
     /// `done` window can be evaluated against an injected clock instead of
     /// `Date()`; the reduction itself stays pure.
+    ///
+    /// Counts are **session groups**, not sessions: a subagent runs as a child
+    /// of the session that started it, and one logical task must read as one
+    /// busy unit. `groupKey(for:)` says which group a session belongs to.
     func chip(now: Date) -> AgentChipState {
-        let awaiting = sessions.values.filter { !$0.pending.isEmpty }.count
+        let awaiting = Set(sessions.values
+            .filter { !$0.pending.isEmpty }
+            .map { Self.groupKey(for: $0) }).count
         if awaiting > 0 { return .awaiting(count: awaiting) }
-        let busy = sessions.values.filter(\.isBusy).count
+        let busy = Set(sessions.values
+            .filter(\.isBusy)
+            .map { Self.groupKey(for: $0) }).count
         if busy > 0 { return .busy(count: busy) }
         if let doneUntil, now < doneUntil { return .done }
         return .idle
@@ -185,8 +201,40 @@ struct AgentSessionStore {
     }
 
     /// How many interactions are waiting, across every session.
+    ///
+    /// Per request, not per group: the card answers one request at a time while
+    /// the chip shows one unit per session group.
     var triageCount: Int {
         sessions.values.reduce(0) { $0 + $1.pending.count }
+    }
+
+    /// Every unresolved permission request, oldest first, as card targets.
+    ///
+    /// Forms are excluded on purpose: P2's card can only answer permissions.
+    /// `position`/`total` are 1-based over this permission queue, which is what
+    /// the identity cell shows. The order is the same strict order as
+    /// `triageHead`, so the card and the chip agree on what is oldest.
+    ///
+    /// Per request, not per group: the card counts requests, the chip counts
+    /// session groups (see `chip(now:)`).
+    var triageList: [AgentCardTarget] {
+        var entries: [(session: AgentSession, request: PendingRequest)] = []
+        for session in sessions.values {
+            for request in session.pending where request.kind == .permission {
+                entries.append((session, request))
+            }
+        }
+        entries.sort {
+            Self.isOlder($0.request, in: $0.session, than: $1.request, in: $1.session)
+        }
+        let total = entries.count
+        return entries.enumerated().map { index, entry in
+            AgentCardTarget(sessionID: entry.session.id,
+                            requestID: entry.request.id,
+                            shortName: entry.session.shortName,
+                            position: index + 1,
+                            total: total)
+        }
     }
 
     // MARK: - Helpers
@@ -207,6 +255,17 @@ struct AgentSessionStore {
         guard let directory, !directory.isEmpty else { return nil }
         let name = (directory as NSString).lastPathComponent
         return name.isEmpty ? nil : name
+    }
+
+    /// The group a session belongs to for chip counting.
+    ///
+    /// opencode nests exactly one level: a subagent session carries `parentID`
+    /// pointing at the main session and never has a parent of its own. The group
+    /// is therefore `parentID ?? id` - the parent that owns the child, or the
+    /// top-level session itself. No chain walk: one level is the whole model, and
+    /// an id whose parent is not known still forms a group of its own.
+    static func groupKey(for session: AgentSession) -> String {
+        session.parentID ?? session.id
     }
 
     private mutating func ensureSession(id: String, directory: String?, now: Date) {

@@ -8,11 +8,11 @@ extension TouchBarController {
     func startAgentBridge() {
         guard agentBridge == nil else { return }
         let bridge = AgentBridge()
-        bridge.onUpdate = { [weak self] state, visible in
+        bridge.onUpdate = { [weak self] snapshot in
             // The bridge publishes on its own queue; every view change is a main
             // thread change.
             DispatchQueue.main.async {
-                self?.applyAgentUpdate(state: state, visible: visible)
+                self?.applyAgentUpdate(snapshot: snapshot)
             }
         }
         agentBridge = bridge
@@ -28,6 +28,7 @@ extension TouchBarController {
         agentAnimationStart = nil
         agentDoneTimer?.invalidate()
         agentDoneTimer = nil
+        resetAgentCard()
     }
 
     /// Asks the bridge to recompute and republish its snapshot.
@@ -41,21 +42,24 @@ extension TouchBarController {
     // MARK: - Rendering
 
     /// Applies one published snapshot. Main thread only.
-    func applyAgentUpdate(state: AgentChipState, visible: Bool) {
+    func applyAgentUpdate(snapshot: AgentSnapshot) {
         guard !didShutdown else { return }
-        // Idempotent: an unchanged pair must not repaint, relayout or restart a
-        // timer. The bridge republishes the same state on every health tick.
-        guard state != agentState || visible != agentVisible else { return }
-        agentState = state
-        agentVisible = visible
+        agentSnapshot = snapshot
+        // The card is checked on every snapshot, even when the chip pair is
+        // unchanged: the queue can change without the chip state changing.
+        syncAgentCard(with: snapshot)
 
-        let visual = AgentChipVisual.visual(for: state)
-        setAgentChipVisible(visible)
+        guard snapshot.chip != agentState || snapshot.visible != agentVisible else { return }
+        agentState = snapshot.chip
+        agentVisible = snapshot.visible
+
+        let visual = AgentChipVisual.visual(for: snapshot.chip)
+        setAgentChipVisible(snapshot.visible)
         agentChip.apply(visual)
         // A collapsed chip has nothing to animate, whatever the state says.
-        updateAgentAnimation(visible ? visual : AgentChipVisual.visual(for: .off))
-        scheduleDoneExpiry(for: state)
-        log("agent chip state=\(Self.agentStateName(state)) visible=\(visible ? 1 : 0)")
+        updateAgentAnimation(snapshot.visible ? visual : AgentChipVisual.visual(for: .off))
+        scheduleDoneExpiry(for: snapshot.chip)
+        log("agent chip state=\(Self.agentStateName(snapshot.chip)) visible=\(snapshot.visible ? 1 : 0)")
     }
 
     /// Collapses the chip by width, never by removing it: the level pill is

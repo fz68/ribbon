@@ -620,15 +620,17 @@ private func chunks(_ text: String, size: Int) -> [Data] {
     @Test func testClientListsSessionsFromWrappedAndBareShapes() async throws {
         StubURLProtocol.install { _ in
             StubReply(chunks: [Data(
-                #"{"data":[{"id":"ses_a","title":"fix tests","location":{"directory":"/x/api"}},{"title":"no id"}],"cursor":{"next":"x"}}"#
+                #"{"data":[{"id":"ses_a","parentID":"ses_x","title":"fix tests","location":{"directory":"/x/api"}},{"id":"ses_b","parentID":null,"title":"top"},{"title":"no id"}],"cursor":{"next":"x"}}"#
                     .utf8)])
         }
         defer { StubURLProtocol.uninstall() }
 
         let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
         let sessions = try await client.listSessions(limit: 2)
-        #expect(sessions == [SessionSummary(id: "ses_a", title: "fix tests", directory: "/x/api")],
-                "the wrapped page decodes and an entry without an id is skipped")
+        #expect(sessions == [
+            SessionSummary(id: "ses_a", parentID: "ses_x", title: "fix tests", directory: "/x/api"),
+            SessionSummary(id: "ses_b", parentID: nil, title: "top", directory: nil),
+        ], "the wrapped page decodes parentID (and null) and skips an entry without an id")
         #expect(StubURLProtocol.lastRequest?.url?.path == "/api/session",
                 "the list comes from the session endpoint")
         #expect(StubURLProtocol.lastRequest?.url?.query == "limit=2",
@@ -640,8 +642,8 @@ private func chunks(_ text: String, size: Int) -> [Data] {
         }
         let bare = try await OpenCodeClient(endpoint: testEndpoint, session: stubSession())
             .listSessions()
-        #expect(bare == [SessionSummary(id: "ses_b", title: nil, directory: "/y")],
-                "a bare array page is accepted")
+        #expect(bare == [SessionSummary(id: "ses_b", parentID: nil, title: nil, directory: "/y")],
+                "a bare array page is accepted and a missing parentID stays nil")
     }
 
     @Test func testClientRejectsAnUnknownSessionListShape() async {

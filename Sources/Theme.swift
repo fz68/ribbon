@@ -32,7 +32,7 @@ enum Theme {
 
     // Agent chip palette. Every value is taken from `chipRainbow` so the chip
     // stays inside the Tokyo Night set instead of introducing a second palette:
-    // the busy border is its teal, the awaiting fill/border are its amber and
+    // the busy border is its cyan, the awaiting fill/border are its amber and
     // orange, and done is its green. The amber and green fills are light enough
     // that the dark focused-chip text (not the usual light label) is the legible
     // foreground on them.
@@ -41,7 +41,12 @@ enum Theme {
     /// Border of the chip while a permission or form is waiting.
     static let agentWaitBorder: UInt32 = 0xffff9e64
     /// Border of the chip while a session is busy.
-    static let agentBusyBorder: UInt32 = 0xff4fd6be
+    ///
+    /// Cyan, not green and not periwinkle: the green fill is the done state's
+    /// signal, and the periwinkle blue this used to use read as purple against
+    /// the dark bar. The cyan border is the only busy signal; the fill stays the
+    /// neutral control background.
+    static let agentBusyBorder: UInt32 = 0xff7dcfff
     /// Fill of the chip for the three seconds after the last session goes idle.
     static let agentDoneFill: UInt32 = 0xffc3e88d
 
@@ -142,5 +147,9 @@ enum Theme {
         static let agentHealthCheck: TimeInterval = 15
         /// Silence after which the agent chip hides (no endpoint, no contacts).
         static let agentContactWindow: TimeInterval = 60
+        /// How long the approval card waits without a tap before it hides.
+        static let agentCardTimeout: TimeInterval = 5
+        /// How long the approval card shows its red border after a failed reply.
+        static let agentCardErrorFlash: TimeInterval = 0.6
     }
 }

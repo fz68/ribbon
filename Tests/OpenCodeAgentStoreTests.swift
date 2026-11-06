@@ -197,6 +197,99 @@ private func at(_ seconds: TimeInterval) -> Date {
                 "two sessions wait, so the chip shows two")
     }
 
+    @Test func testTriageListOrdersPermissionsOldestFirstAndExcludesForms() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_a"])
+        try apply("session.created", to: &store, data: ["sessionID": "ses_b"])
+
+        try apply("permission.asked", at: 10, to: &store,
+                  data: ["sessionID": "ses_a", "id": "per_late", "action": "bash"])
+        try apply("form.created", at: 5, to: &store,
+                  data: ["sessionID": "ses_b", "id": "frm_1", "title": "Choose"])
+        try apply("permission.asked", at: 1, to: &store,
+                  data: ["sessionID": "ses_b", "id": "per_early", "action": "edit"])
+
+        let triage = store.triageList
+        #expect(triage.map(\.requestID) == ["per_early", "per_late"],
+                "permissions are oldest first and forms are not card targets")
+        #expect(triage.map(\.position) == [1, 2], "positions are 1-based")
+        #expect(triage.map(\.total) == [2, 2], "the total is the permission queue size")
+        #expect(triage.map(\.sessionID) == ["ses_b", "ses_a"],
+                "identities come from the owning sessions")
+        #expect(triage.allSatisfy { $0.shortName == "?" },
+                "a session without a directory has an unknown short name")
+        #expect(store.triageCount == 3, "forms still count in the raw waiting total")
+        #expect(store.chip(now: at(10)) == .awaiting(count: 2),
+                "both sessions with work keep the chip in awaiting")
+    }
+
+    @Test func testChipCountsSessionGroupsNotSessions() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_parent"])
+        try apply("session.created", to: &store,
+                  data: ["sessionID": "ses_child", "parentID": "ses_parent"])
+        try apply("session.status", at: 1, to: &store,
+                  data: ["sessionID": "ses_parent", "status": ["type": "busy"]])
+        try apply("session.status", at: 1, to: &store,
+                  data: ["sessionID": "ses_child", "status": ["type": "busy"]])
+
+        #expect(store.sessions["ses_child"]?.parentID == "ses_parent",
+                "the created event teaches the parent")
+        #expect(store.chip(now: at(1)) == .busy(count: 1),
+                "a parent and its subagent are one busy group")
+
+        // A created event without a parent must not clear a known parent.
+        try apply("session.created", at: 2, to: &store, data: ["sessionID": "ses_child"])
+        #expect(store.sessions["ses_child"]?.parentID == "ses_parent",
+                "a missing parentID leaves parentage alone")
+
+        // Two unrelated top-level sessions remain two groups.
+        var unrelated = AgentSessionStore()
+        try apply("session.created", to: &unrelated, data: ["sessionID": "ses_a"])
+        try apply("session.created", to: &unrelated, data: ["sessionID": "ses_b"])
+        try apply("session.status", at: 1, to: &unrelated,
+                  data: ["sessionID": "ses_a", "status": ["type": "busy"]])
+        try apply("session.status", at: 1, to: &unrelated,
+                  data: ["sessionID": "ses_b", "status": ["type": "busy"]])
+        #expect(unrelated.chip(now: at(1)) == .busy(count: 2),
+                "unrelated sessions are separate groups")
+    }
+
+    @Test func testAwaitingCountsGroupsWhileTriageCountsRequests() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_parent"])
+        try apply("session.created", to: &store,
+                  data: ["sessionID": "ses_child", "parentID": "ses_parent"])
+        try apply("session.status", at: 1, to: &store,
+                  data: ["sessionID": "ses_parent", "status": ["type": "busy"]])
+        try apply("session.status", at: 1, to: &store,
+                  data: ["sessionID": "ses_child", "status": ["type": "busy"]])
+        try apply("permission.asked", at: 2, to: &store,
+                  data: ["sessionID": "ses_child", "id": "per_1", "action": "bash"])
+
+        #expect(store.chip(now: at(2)) == .awaiting(count: 1),
+                "a pending request on the child is one awaiting group")
+        #expect(store.triageCount == 1, "the card counts the request itself")
+
+        // A second request in the parent is the same group for the chip, but a
+        // separate request for the card.
+        try apply("permission.asked", at: 3, to: &store,
+                  data: ["sessionID": "ses_parent", "id": "per_2", "action": "edit"])
+        #expect(store.chip(now: at(3)) == .awaiting(count: 1),
+                "both sessions belong to one group")
+        #expect(store.triageCount == 2, "the card still sees two requests")
+        #expect(store.triageList.map(\.requestID) == ["per_1", "per_2"],
+                "triage stays per request, oldest first")
+
+        // An unrelated pending request is its own group; awaiting still outranks
+        // busy, exactly as before the grouping change.
+        try apply("permission.asked", at: 4, to: &store,
+                  data: ["sessionID": "ses_other", "id": "per_3", "action": "read"])
+        #expect(store.chip(now: at(4)) == .awaiting(count: 2),
+                "a second group awaiting raises the group count")
+        #expect(store.triageCount == 3, "and the request count")
+    }
+
     @Test func testDeletedSessionDropsItsPendingRequests() throws {
         var store = AgentSessionStore()
         try apply("session.created", to: &store, data: ["sessionID": "ses_1"])

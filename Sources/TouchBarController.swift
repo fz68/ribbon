@@ -57,6 +57,15 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// The last published pair, so identical snapshots touch nothing.
     var agentState: AgentChipState?
     var agentVisible = false
+    /// The approval card overlay, added last so it floats above everything.
+    let agentCard = AgentCardView()
+    /// Locked open/decide/close state for the two-tap approval flow.
+    var agentCardMachine = AgentCardMachine()
+    /// Drives the card timeout and the error flash while the card is open.
+    var agentCardTimer: Timer?
+    /// The last published bridge snapshot: the chip tap and the replied race
+    /// both read the queue from it.
+    var agentSnapshot: AgentSnapshot?
     let timeLabel = NSTextField(labelWithString: "")
     let volumeQueue = DispatchQueue(label: "local.ribbon.volume")
     /// Refreshes the clock. Formatting only, so it never spawns a process.

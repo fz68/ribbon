@@ -96,6 +96,12 @@ final class AgentChipView: NSView {
     private let label = NSTextField(labelWithString: "")
     private let dot = NSView()
     private let hairline = CALayer()
+    /// Full-chip tap target. The chip paints its own pill, so the button only
+    /// forwards presses, exactly like the workspace chips.
+    private let tapButton = ChipTapButton()
+    /// Called on the main thread for a press+release inside the chip. Set once by
+    /// the controller.
+    var onTap: (() -> Void)?
     private var visual = AgentChipVisual.visual(for: .off)
     private var hairlinePhase: CGFloat = 0
 
@@ -133,6 +139,11 @@ final class AgentChipView: NSView {
         hairline.isHidden = true
         layer?.addSublayer(hairline)
 
+        tapButton.applyBarButtonStyle()
+        tapButton.target = self
+        tapButton.action = #selector(handleTap)
+        addSubview(tapButton)
+
         NSLayoutConstraint.activate([
             label.centerXAnchor.constraint(equalTo: centerXAnchor),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -140,9 +151,17 @@ final class AgentChipView: NSView {
             dot.centerYAnchor.constraint(equalTo: centerYAnchor),
             dot.widthAnchor.constraint(equalToConstant: 5),
             dot.heightAnchor.constraint(equalToConstant: 5),
+            tapButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            tapButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+            tapButton.topAnchor.constraint(equalTo: topAnchor),
+            tapButton.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
         apply(visual)
+    }
+
+    @objc private func handleTap() {
+        onTap?()
     }
 
     /// Paints one state. Visibility and width belong to the controller.

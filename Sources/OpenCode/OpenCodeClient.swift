@@ -25,6 +25,9 @@ enum OpenCodeClientError: Error, Equatable {
 /// chip concerns (busy is not in the list response; it comes from active ids).
 struct SessionSummary: Equatable {
     let id: String
+    /// The main session that owns this subagent session; nil for a top-level
+    /// session. opencode nests exactly one level deep.
+    let parentID: String?
     let title: String?
     let directory: String?
 }
@@ -109,6 +112,9 @@ struct OpenCodeClient {
             guard let id = entry["id"] as? String else { return nil }
             let location = entry["location"] as? [String: Any]
             return SessionSummary(id: id,
+                                  // JSON null decodes to nil here, which is the
+                                  // top-level-session case.
+                                  parentID: entry["parentID"] as? String,
                                   title: entry["title"] as? String,
                                   directory: location?["directory"] as? String)
         }

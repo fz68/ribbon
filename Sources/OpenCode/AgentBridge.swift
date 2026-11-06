@@ -1,5 +1,17 @@
 import Foundation
 
+/// One published state of the agent UI.
+///
+/// The chip and the card read the same snapshot, so they can never disagree
+/// about whether the bridge is alive or what the queue looks like. `triage`
+/// carries permissions only: P2's card cannot answer forms.
+struct AgentSnapshot: Equatable {
+    let chip: AgentChipState
+    let visible: Bool
+    /// Permission requests only, oldest first, with 1-based positions.
+    let triage: [AgentCardTarget]
+}
+
 /// Owns the opencode connection for the agent chip.
 ///
 /// The bridge is the only place that knows about all four P0 pieces: the
@@ -25,7 +37,7 @@ final class AgentBridge: @unchecked Sendable {
     /// Publishes every recomputed snapshot on the bridge queue. Identical
     /// snapshots can arrive repeatedly (the health tick republishes); the
     /// consumer is expected to ignore them.
-    var onUpdate: ((AgentChipState, Bool) -> Void)?
+    var onUpdate: ((AgentSnapshot) -> Void)?
 
     private let locator: ServiceLocator
     private let stream: EventStream
@@ -111,7 +123,7 @@ final class AgentBridge: @unchecked Sendable {
             self.lastContact = nil
             self.store = AgentSessionStore()
             self.reconcileGeneration += 1
-            self.onUpdate?(.off, false)
+            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: []))
         }
     }
 
@@ -122,6 +134,38 @@ final class AgentBridge: @unchecked Sendable {
     func refresh() {
         queue.async { [weak self] in
             self?.publish()
+        }
+    }
+
+    /// Sends one decision for the request the card locked, reporting the
+    /// outcome on the bridge queue.
+    ///
+    /// The ids are passed in rather than looked up again: by the time the
+    /// request lands, the queue may already have moved on, and the user
+    /// answered the request the card showed.
+    func reply(sessionID: String, requestID: String, decision: AgentDecision,
+               completion: @escaping (Bool) -> Void) {
+        queue.async { [weak self] in
+            guard let self, let client = self.client else {
+                completion(false)
+                return
+            }
+            let queue = self.queue
+            // The completion is not Sendable; the task only hands it back to the
+            // bridge queue, so wrapping it states that confinement.
+            let result = SendableCompletion(run: completion)
+            Task {
+                let succeeded: Bool
+                do {
+                    try await client.replyPermission(sessionID: sessionID,
+                                                     requestID: requestID,
+                                                     decision: decision)
+                    succeeded = true
+                } catch {
+                    succeeded = false
+                }
+                queue.async { result.run(succeeded) }
+            }
         }
     }
 
@@ -253,11 +297,14 @@ final class AgentBridge: @unchecked Sendable {
 
     private func publish() {
         let now = self.now()
-        let state = store.chip(now: now)
-        let visible = AgentBridgeHealth.visible(endpoint: endpoint != nil,
-                                                lastContact: lastContact,
-                                                now: now)
-        onUpdate?(state, visible)
+        let snapshot = AgentSnapshot(
+            chip: store.chip(now: now),
+            visible: AgentBridgeHealth.visible(endpoint: endpoint != nil,
+                                               lastContact: lastContact,
+                                               now: now),
+            triage: store.triageList
+        )
+        onUpdate?(snapshot)
     }
 
     private struct Snapshot {
@@ -265,4 +312,13 @@ final class AgentBridge: @unchecked Sendable {
         let listed: [SessionSummary]
         let pendingByID: [String: [PendingRequest]]?
     }
+}
+
+/// Carries an escaping completion across a `Task` boundary.
+///
+/// The closure is not Sendable but only ever runs on the bridge queue; the
+/// wrapper states that confinement instead of forcing it into a `@Sendable`
+/// parameter the call sites would have to satisfy.
+private struct SendableCompletion<Value>: @unchecked Sendable {
+    let run: (Value) -> Void
 }

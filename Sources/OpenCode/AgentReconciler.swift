@@ -55,7 +55,12 @@ enum AgentReconciler {
                                 shortName: shortName,
                                 isBusy: activeIDs.contains(id),
                                 pending: pending,
-                                lastSeen: now)
+                                lastSeen: now,
+                                // Only the list page knows parentage. A session
+                                // kept because it is active or pending but
+                                // missing from the page has no known parent and
+                                // therefore forms its own group.
+                                parentID: summary?.parentID)
         }
     }
 }

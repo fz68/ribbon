@@ -80,6 +80,9 @@ extension TouchBarController {
         // on the other, so both have to exist before it is constrained.
         constrainAppLabel()
         setupLevelPop()
+        // Added last so the approval card floats above every other subview,
+        // including the transient level pill.
+        setupAgentCard()
     }
 
     private func setupAgentChip() {

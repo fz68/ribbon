@@ -23,6 +23,9 @@ struct AgentEvent: Equatable {
     let directory: String?
     /// Session title, present on `session.created`.
     let title: String?
+    /// Parent session id when this event concerns a subagent session; nil for a
+    /// top-level session. Decoded opportunistically from the payload.
+    let parentID: String?
     /// The untouched `data` object, so the reducer can read action/resources.
     let data: [String: Any]
 
@@ -38,6 +41,7 @@ struct AgentEvent: Equatable {
             && lhs.statusType == rhs.statusType
             && lhs.directory == rhs.directory
             && lhs.title == rhs.title
+            && lhs.parentID == rhs.parentID
             && NSDictionary(dictionary: lhs.data).isEqual(to: rhs.data)
     }
 }
@@ -105,6 +109,7 @@ extension AgentEvent {
                           statusType: statusType,
                           directory: directory,
                           title: data["title"] as? String,
+                          parentID: data["parentID"] as? String,
                           data: data)
     }
 }
