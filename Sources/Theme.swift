@@ -30,6 +30,21 @@ enum Theme {
     /// Placeholder chip glyph.
     static let placeholderTint: UInt32 = 0xff6c7086
 
+    // Agent chip palette. Every value is taken from `chipRainbow` so the chip
+    // stays inside the Tokyo Night set instead of introducing a second palette:
+    // the busy border is its teal, the awaiting fill/border are its amber and
+    // orange, and done is its green. The amber and green fills are light enough
+    // that the dark focused-chip text (not the usual light label) is the legible
+    // foreground on them.
+    /// Fill of the chip while a permission or form is waiting.
+    static let agentWaitFill: UInt32 = 0xffffc777
+    /// Border of the chip while a permission or form is waiting.
+    static let agentWaitBorder: UInt32 = 0xffff9e64
+    /// Border of the chip while a session is busy.
+    static let agentBusyBorder: UInt32 = 0xff4fd6be
+    /// Fill of the chip for the three seconds after the last session goes idle.
+    static let agentDoneFill: UInt32 = 0xffc3e88d
+
     /// The pixel metrics the bar lays out with.
     enum Layout {
         /// Width the full bar asks the system for.
@@ -121,5 +136,11 @@ enum Theme {
         static let mediaMissThreshold: Int = 2
         /// How long the brightness/volume level pill stays visible.
         static let levelPop: TimeInterval = 1
+        /// Period of the agent chip's waiting pulse.
+        static let agentPulsePeriod: TimeInterval = 1.2
+        /// How often the agent bridge re-evaluates its health.
+        static let agentHealthCheck: TimeInterval = 15
+        /// Silence after which the agent chip hides (no endpoint, no contacts).
+        static let agentContactWindow: TimeInterval = 60
     }
 }

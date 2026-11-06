@@ -438,11 +438,43 @@ private func chunks(_ text: String, size: Int) -> [Data] {
         let stream = EventStream(session: stubSession(), idleTimeout: 5, retryPolicy: policy)
         stream.update(endpoint: testEndpoint)
 
-        #expect(waitUntil(timeout: 5) { StubURLProtocol.requestCount >= 3 },
-                "the client keeps reconnecting")
+        // A connection that ends without a single line must schedule the next
+        // attempt every time. A stored handle for an already finished run, or an
+        // idle timer left spinning, would stop the retries here.
+        #expect(waitUntil(timeout: 5) { StubURLProtocol.requestCount >= 4 },
+                "the client keeps reconnecting after immediate closes")
         #expect(stream.nextRetryDelay > policy.initialDelay,
                 "a connection that never delivers a line keeps backing off")
+        #expect(stream.nextRetryDelay >= policy.delay(forAttempt: 2),
+                "the delay has grown several steps, not just once")
         stream.stop()
+    }
+
+    @Test func testHeartbeatsFireActivityOnceAndNeverAnEvent() {
+        // Two heartbeats inside the throttle window, then the finite body ends
+        // and the stub replays the same lines on reconnect: the throttle must
+        // hold across connections as well.
+        let body = ": heartbeat\n\n: heartbeat\n\n"
+        StubURLProtocol.install { _ in StubReply(chunks: [Data(body.utf8)]) }
+        defer { StubURLProtocol.uninstall() }
+
+        let activities = StreamBox(0)
+        let events = StreamBox<[AgentEvent]>([])
+        let stream = EventStream(session: stubSession(),
+                                 idleTimeout: 5,
+                                 retryPolicy: StreamRetryPolicy(initialDelay: 0.05, maximumDelay: 0.05))
+        stream.onActivity = { activities.withLock { $0 += 1 } }
+        stream.onEvent = { event in events.withLock { $0.append(event) } }
+        stream.update(endpoint: testEndpoint)
+
+        #expect(waitUntil(timeout: 5) { activities.value >= 1 },
+                "a heartbeat comment counts as activity")
+        #expect(waitUntil(timeout: 5) { StubURLProtocol.requestCount >= 2 },
+                "the finite body ends and the stream reconnects")
+        stream.stop()
+        #expect(activities.value == 1,
+                "two heartbeats within five seconds notify exactly once")
+        #expect(events.value.isEmpty, "a heartbeat is never delivered as an event")
     }
 
     @Test func testBackoffResetsAfterARealLine() {
@@ -583,6 +615,77 @@ private func chunks(_ text: String, size: Int) -> [Data] {
         await #expect(throws: OpenCodeClientError.badStatus(500)) {
             _ = try await client.info()
         }
+    }
+
+    @Test func testClientListsSessionsFromWrappedAndBareShapes() async throws {
+        StubURLProtocol.install { _ in
+            StubReply(chunks: [Data(
+                #"{"data":[{"id":"ses_a","title":"fix tests","location":{"directory":"/x/api"}},{"title":"no id"}],"cursor":{"next":"x"}}"#
+                    .utf8)])
+        }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        let sessions = try await client.listSessions(limit: 2)
+        #expect(sessions == [SessionSummary(id: "ses_a", title: "fix tests", directory: "/x/api")],
+                "the wrapped page decodes and an entry without an id is skipped")
+        #expect(StubURLProtocol.lastRequest?.url?.path == "/api/session",
+                "the list comes from the session endpoint")
+        #expect(StubURLProtocol.lastRequest?.url?.query == "limit=2",
+                "the page size is passed through")
+
+        // A bare array is the documented fallback shape.
+        StubURLProtocol.install { _ in
+            StubReply(chunks: [Data(#"[{"id":"ses_b","location":{"directory":"/y"}}]"#.utf8)])
+        }
+        let bare = try await OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+            .listSessions()
+        #expect(bare == [SessionSummary(id: "ses_b", title: nil, directory: "/y")],
+                "a bare array page is accepted")
+    }
+
+    @Test func testClientRejectsAnUnknownSessionListShape() async {
+        StubURLProtocol.install { _ in StubReply(chunks: [Data(#"{"data":42}"#.utf8)]) }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        await #expect(throws: OpenCodeClientError.transport) {
+            _ = try await client.listSessions()
+        }
+    }
+
+    @Test func testClientDecodesPendingRequests() async throws {
+        StubURLProtocol.install { _ in
+            StubReply(chunks: [Data(
+                #"{"data":[{"id":"per_1","sessionID":"ses_1","action":"bash","resources":["ls","-la"]},{"sessionID":"ses_1"}]}"#
+                    .utf8)])
+        }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        let fetchedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let pending = try await client.pendingRequests(sessionID: "ses_1", now: fetchedAt)
+
+        #expect(pending.count == 1, "an entry without an id is skipped")
+        #expect(pending.first?.id == "per_1", "the request id is decoded")
+        #expect(pending.first?.kind == .permission, "fetched pendings are permissions")
+        #expect(pending.first?.action == "bash", "the action is decoded")
+        #expect(pending.first?.resources == ["ls", "-la"], "resources are decoded")
+        #expect(pending.first?.requestedAt == fetchedAt,
+                "the fetch time fills the timestamp the payload does not carry")
+        #expect(StubURLProtocol.lastRequest?.url?.path == "/api/session/ses_1/permission",
+                "pendings are read per session")
+        #expect(StubURLProtocol.lastRequest?.url?.query == nil,
+                "the pending list takes no query")
+
+        // A bare array is the documented fallback shape.
+        StubURLProtocol.install { _ in
+            StubReply(chunks: [Data(#"[{"id":"per_2","action":"edit"}]"#.utf8)])
+        }
+        let bare = try await OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+            .pendingRequests(sessionID: "ses_2")
+        #expect(bare.map(\.id) == ["per_2"], "a bare array is accepted")
+        #expect(bare.first?.resources.isEmpty == true, "missing resources are empty")
     }
 
     @Test func testEndpointDescriptionNeverContainsPassword() {

@@ -39,6 +39,24 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     let levelPop = LevelPopView()
     /// Hides `levelPop` after the step has been shown for its full interval.
     var levelPopTimer: Timer?
+
+    // MARK: - Agent chip
+
+    /// The read-only OpenCode agent chip, hidden and zero width until the bridge
+    /// reports a live endpoint.
+    let agentChip = AgentChipView()
+    /// 56 while the bridge is healthy, 0 while it is collapsed.
+    var agentChipWidth: NSLayoutConstraint?
+    /// Owns the locator, event stream, client and reducer behind the chip.
+    var agentBridge: AgentBridge?
+    /// Drives the pulse and the hairline at 10 Hz while either animates.
+    var agentAnimationTimer: Timer?
+    var agentAnimationStart: Date?
+    /// Republishes the done state once its three second window expires.
+    var agentDoneTimer: Timer?
+    /// The last published pair, so identical snapshots touch nothing.
+    var agentState: AgentChipState?
+    var agentVisible = false
     let timeLabel = NSTextField(labelWithString: "")
     let volumeQueue = DispatchQueue(label: "local.ribbon.volume")
     /// Refreshes the clock. Formatting only, so it never spawns a process.
@@ -190,6 +208,9 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         let placement: Int64 = controlStripVisible ? 0 : 1
         NSTouchBar.presentSystemModalTouchBar(touchBar, placement: placement, systemTrayItemIdentifier: nil)
         log("presented placement=\(placement)")
+        // The bridge is started after the bar is on screen, so discovery, the
+        // first event connection and the reconcile are never on the launch path.
+        startAgentBridge()
         NSApp.deactivate()
         DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.frontAppRefresh) { [weak self] in
             self?.updateFrontApp()
@@ -228,6 +249,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         batteryTimer = nil
         mediaTimer?.invalidate()
         mediaTimer = nil
+        stopAgentBridge()
         levelPopTimer?.invalidate()
         levelPopTimer = nil
         imeWatcher.stop()
@@ -258,6 +280,10 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
                 self.rebuildChips()
             }
         }
+        // The agent chip has its own connection and clock; it is refreshed after
+        // the workspace path (and outside its early returns) so a slow or empty
+        // workspace list cannot delay or skip it.
+        updateAgentChip()
     }
 
     func scheduleRefresh() {

@@ -342,7 +342,7 @@ struct AgentSessionStore {
 
 | 风险 | 对策 |
 |---|---|
-| SSE 心跳为 `: heartbeat` 注释行, 连接时必发但周期未证实 | 任意行重置 60s 空闲计时, 超时重连 + 全量对账 |
+| SSE 心跳为 `: heartbeat` 注释行, 周期性确认: 心跳使连接长期保持, 故健康判定必须把任意活动(含心跳)计为 contact (2026-11-06 实机日志证实) | 任意行重置 60s 空闲计时, 超时重连 + 全量对账 |
 | 事件流含 session.text.delta 等高频帧 | 字节级预过滤, 未命中订阅类型不解码 |
 | service 重启换 url/password | ServiceLocator watch 父目录应对原子替换, 端点变更即重建 EventStream |
 | openapi 字段随版本漂移 | 解码容忍缺字段 (短名退 "?", metadata 只取已知键); 启动时 /api/info 的 version 写一条日志 |

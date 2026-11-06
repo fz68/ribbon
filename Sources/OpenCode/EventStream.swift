@@ -79,11 +79,11 @@ struct SSELineParser {
 /// therefore filtered as a string before any JSON decode, which keeps the cost
 /// of an interesting frame off the hot path.
 ///
-/// Thread contract: `onEvent` and `onResync` are always called on the private
-/// serial queue, never on the main thread. Both closures are set once, before
-/// `update(endpoint:)`, and never mutated afterwards: the delivery path reads
-/// them from that queue without additional synchronisation. `update(endpoint:)`
-/// and `stop()` may be called from any thread.
+/// Thread contract: `onEvent`, `onResync` and `onActivity` are always called on
+/// the private serial queue, never on the main thread. All three closures are
+/// set once, before `update(endpoint:)`, and never mutated afterwards: the
+/// delivery path reads them from that queue without additional synchronisation.
+/// `update(endpoint:)` and `stop()` may be called from any thread.
 final class EventStream {
     /// Delivers one subscribed event. Set once, before `update(endpoint:)`.
     var onEvent: ((AgentEvent) -> Void)?
@@ -91,6 +91,17 @@ final class EventStream {
     /// full reconciliation (active sessions + pending state) on every call. Set
     /// once, before `update(endpoint:)`.
     var onResync: (() -> Void)?
+
+    /// Fires for any received line once the stream has not notified for a while,
+    /// heartbeats and frame boundaries included.
+    ///
+    /// Separate from `onEvent` because liveness is not the same thing as a
+    /// business event: the service keeps the connection open with `: heartbeat`
+    /// comments during long quiet stretches, so a health check that only listens
+    /// to events would hide a perfectly healthy chip. Throttled by
+    /// `activityNotifyInterval` so a delta burst cannot wake the owner per line.
+    /// Called on the stream queue; set once, before `update(endpoint:)`.
+    var onActivity: (() -> Void)?
 
     /// Six lines of silence a minute apart is still alive; a minute of total
     /// silence is not, so the connection is presumed dead and rebuilt.
@@ -112,6 +123,10 @@ final class EventStream {
 
     private static let serverConnectedMarker = "\"type\":\"server.connected\""
 
+    /// Minimum gap between `onActivity` calls. Any line proves liveness, but a
+    /// delta burst would otherwise wake the owner dozens of times a second.
+    private static let activityNotifyInterval: TimeInterval = 5
+
     private let session: URLSession
     private let retryPolicy: StreamRetryPolicy
     private let idleTimeout: TimeInterval
@@ -122,6 +137,10 @@ final class EventStream {
     private var task: Task<Void, Never>?
     private var idleTimer: DispatchSourceTimer?
     private var lastActivity = DispatchTime.now()
+    /// When `onActivity` last fired. The throttle spans connections on purpose:
+    /// a reconnect within the interval does not need a second wake-up, and the
+    /// resync that follows a subscribe is already contact.
+    private var lastActivityNotify: DispatchTime?
     private var generation = 0
     private var attempt = 0
     private var stopped = true
@@ -303,7 +322,17 @@ final class EventStream {
     /// Ends the current connection and schedules the retry.
     private func finish(generation: Int) {
         lock.lock()
-        guard generation == self.generation, !stopped, connectionOpen else {
+        guard generation == self.generation, !stopped else {
+            lock.unlock()
+            return
+        }
+        // The idle timer belongs to this generation. Even when the connection is
+        // already closed (the handle was never stored, or a previous finish ran),
+        // the timer must be cancelled here: a timer left behind would fire
+        // forever with no connection to cancel and no retry to schedule, because
+        // this path exits before the retry is booked.
+        guard connectionOpen else {
+            cancelIdleTimerLocked()
             lock.unlock()
             return
         }
@@ -348,10 +377,23 @@ final class EventStream {
             return
         }
         // Any line - a heartbeat comment, a delta, a frame boundary - proves the
-        // connection is alive.
-        lastActivity = DispatchTime.now()
+        // connection is alive. The idle timeout follows every line; the owner is
+        // woken at most once per interval so a delta burst stays cheap.
+        let now = DispatchTime.now()
+        lastActivity = now
         if connectionOpen { attempt = 0 }
+        let notify = lastActivityNotify.map {
+            Double(now.uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000_000
+                >= Self.activityNotifyInterval
+        } ?? true
+        if notify { lastActivityNotify = now }
         lock.unlock()
+
+        if notify {
+            queue.async { [weak self] in
+                self?.onActivity?()
+            }
+        }
 
         if let payload = parser.consume(line: line) {
             deliver(payload)

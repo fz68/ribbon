@@ -75,24 +75,46 @@ extension TouchBarController {
         setupChipRow()
         setupAppLabel()
         setupRightCluster()
-        // The app label is pinned to the chip row on one side and the right
-        // cluster on the other, so both have to exist before it is constrained.
+        setupAgentChip()
+        // The app label is pinned to the chip row on one side and the agent chip
+        // on the other, so both have to exist before it is constrained.
         constrainAppLabel()
         setupLevelPop()
     }
 
+    private func setupAgentChip() {
+        // The agent chip owns the slot between the app label and the right
+        // cluster. Its constraints stay installed while it is collapsed: only
+        // the width changes to 0 (and the view hides), so the level pill's
+        // leading anchor keeps resolving.
+        agentChip.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(agentChip)
+        let width = agentChip.widthAnchor.constraint(equalToConstant: 0)
+        width.isActive = true
+        agentChipWidth = width
+        agentChip.isHidden = true
+        NSLayoutConstraint.activate([
+            agentChip.trailingAnchor.constraint(equalTo: rightStack.leadingAnchor,
+                                                constant: -Theme.Layout.clusterGap),
+            agentChip.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            agentChip.heightAnchor.constraint(equalToConstant: Theme.Layout.controlSize),
+        ])
+    }
+
     private func setupLevelPop() {
-        // Added last so the pill floats above the chips. It sits in the blank gap
-        // right of the front-app label and left of the brightness buttons,
-        // anchored to the buttons so it moves with them: only the battery side of
-        // the right cluster is a constant width. The clock is content-sized, so
-        // when the date gains a digit (1月1 -> 12月31) the pill and the buttons
-        // can shift left by a few points at midnight. It passes clicks through, so
-        // it never swallows a tap meant for a control underneath it.
+        // Added last so the pill floats above the chips and the agent chip. It
+        // sits in the blank gap right of the front-app label and left of the
+        // agent chip, anchored to the chip so it moves with the right cluster:
+        // only the battery side of the cluster is a constant width. With the chip
+        // collapsed its leading edge is 8 pt left of the old right-cluster
+        // anchor, so the pill sits 8 pt further left than before - acceptable for
+        // a one second transient. It passes clicks through, so it never swallows
+        // a tap meant for a control underneath it.
         levelPop.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(levelPop)
         NSLayoutConstraint.activate([
-            levelPop.trailingAnchor.constraint(equalTo: rightStack.leadingAnchor, constant: -Theme.Layout.clusterGap),
+            levelPop.trailingAnchor.constraint(equalTo: agentChip.leadingAnchor,
+                                               constant: -Theme.Layout.clusterGap),
             levelPop.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             levelPop.widthAnchor.constraint(equalToConstant: Theme.Layout.levelPopWidth),
             levelPop.heightAnchor.constraint(equalToConstant: Theme.Layout.levelPopHeight),
@@ -242,8 +264,9 @@ extension TouchBarController {
     }
 
     private func constrainAppLabel() {
-        // The app label yields before it can reach the right cluster.
-        let appLabelTrailing = frontAppLabel.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.leadingAnchor, constant: -Theme.Layout.clusterGap)
+        // The app label ends where the agent chip begins, so the chip's 64 pt
+        // slot is really reserved instead of the label running underneath it.
+        let appLabelTrailing = frontAppLabel.trailingAnchor.constraint(lessThanOrEqualTo: agentChip.leadingAnchor, constant: -Theme.Layout.clusterGap)
         appLabelTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
         let zeroWidth = frontAppLabel.widthAnchor.constraint(equalToConstant: 0)
         zeroWidth.isActive = false

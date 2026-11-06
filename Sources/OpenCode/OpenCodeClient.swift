@@ -19,6 +19,16 @@ enum OpenCodeClientError: Error, Equatable {
     case transport
 }
 
+/// The fields a reconciled session needs from `GET /api/session`.
+///
+/// Decoded separately from `AgentSession` so the transport type stays free of
+/// chip concerns (busy is not in the list response; it comes from active ids).
+struct SessionSummary: Equatable {
+    let id: String
+    let title: String?
+    let directory: String?
+}
+
 /// A typed client for one opencode service.
 ///
 /// Authentication is derived from the endpoint and attached to every request.
@@ -86,6 +96,59 @@ struct OpenCodeClient {
         _ = try await send("POST", path, body: body)
     }
 
+    /// GET `/api/session?limit=N`.
+    ///
+    /// The live service wraps the page as `{"data": [...], "cursor": {...}}`; a
+    /// bare array is accepted as well so a shape change cannot blank the chip.
+    /// Entries without an id are skipped rather than failing the page.
+    func listSessions(limit: Int = 50) async throws -> [SessionSummary] {
+        let data = try await send("GET", "api/session",
+                                  queryItems: [URLQueryItem(name: "limit", value: String(limit))])
+        let entries = try Self.dataEntries(from: data)
+        return entries.compactMap { entry in
+            guard let id = entry["id"] as? String else { return nil }
+            let location = entry["location"] as? [String: Any]
+            return SessionSummary(id: id,
+                                  title: entry["title"] as? String,
+                                  directory: location?["directory"] as? String)
+        }
+    }
+
+    /// GET `/api/session/{sessionID}/permission`.
+    ///
+    /// Live 2.1.4 answers `{"data": [Permission.Request...]}`; a bare array is
+    /// accepted as a fallback. The payload has no timestamp, so `now` (the fetch
+    /// time) becomes `requestedAt`: the store only uses that to order triage,
+    /// and a fetched request is the oldest information available for it.
+    func pendingRequests(sessionID: String, now: Date = Date()) async throws -> [PendingRequest] {
+        let path = "api/session/\(Self.encodePathComponent(sessionID))/permission"
+        let data = try await send("GET", path)
+        let entries = try Self.dataEntries(from: data)
+        return entries.compactMap { entry in
+            guard let id = entry["id"] as? String else { return nil }
+            return PendingRequest(id: id,
+                                  kind: .permission,
+                                  action: entry["action"] as? String ?? "",
+                                  resources: entry["resources"] as? [String] ?? [],
+                                  requestedAt: now)
+        }
+    }
+
+    /// Decodes a response that is either a bare array of objects or `{"data": [...]}`.
+    private static func dataEntries(from data: Data) throws -> [[String: Any]] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            throw OpenCodeClientError.transport
+        }
+        if let array = object as? [[String: Any]] {
+            return array
+        }
+        if let wrapper = object as? [String: Any],
+           let array = wrapper["data"] as? [[String: Any]] {
+            return array
+        }
+        throw OpenCodeClientError.transport
+    }
+
     // MARK: - Decoding
 
     /// Extracts ids whose state object says `running`.
@@ -119,7 +182,10 @@ struct OpenCodeClient {
         value.addingPercentEncoding(withAllowedCharacters: pathComponentAllowed) ?? value
     }
 
-    private func request(_ method: String, _ path: String, body: Data? = nil) -> URLRequest {
+    private func request(_ method: String,
+                         _ path: String,
+                         queryItems: [URLQueryItem] = [],
+                         body: Data? = nil) -> URLRequest {
         // `path` is already percent-encoded; URLComponents.percentEncodedPath
         // installs it verbatim, where appendingPathComponent would double-encode
         // an id that contains '%'.
@@ -128,6 +194,7 @@ struct OpenCodeClient {
             let base = components.percentEncodedPath
             let prefix = base.hasSuffix("/") ? String(base.dropLast()) : base
             components.percentEncodedPath = prefix + "/" + path
+            if !queryItems.isEmpty { components.queryItems = queryItems }
             if let built = components.url { url = built }
         }
         var request = URLRequest(url: url)
@@ -142,8 +209,11 @@ struct OpenCodeClient {
     }
 
     @discardableResult
-    private func send(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
-        let request = request(method, path, body: body)
+    private func send(_ method: String,
+                      _ path: String,
+                      queryItems: [URLQueryItem] = [],
+                      body: Data? = nil) async throws -> Data {
+        let request = request(method, path, queryItems: queryItems, body: body)
         do {
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
