@@ -13,7 +13,8 @@ private func paneEntry(_ paneID: Int,
                        cwd: String,
                        active: Bool,
                        windowID: Int = 0,
-                       cmdline: [String]? = nil) -> [String: Any] {
+                       cmdline: [String]? = nil,
+                       tty: String = "/dev/ttys004") -> [String: Any] {
     var entry: [String: Any] = [
         "window_id": windowID,
         "tab_id": tabID,
@@ -32,7 +33,7 @@ private func paneEntry(_ paneID: Int,
         "window_title": "OC",
         "is_active": active,
         "is_zoomed": false,
-        "tty_name": "/dev/ttys004",
+        "tty_name": tty,
     ]
     if let cmdline { entry["cmdline"] = cmdline }
     return entry
@@ -73,6 +74,18 @@ private final class RunnerStub: @unchecked Sendable {
     }
 }
 
+/// Stand-in for the `ps -axo tty=,command=` run: no opencode on any tty.
+private let noOpencodeProcesses: WeztermLocator.Runner = { _, _, _ in
+    ProcessResult(status: 0, stdout: Data(), timedOut: false, launchError: nil)
+}
+
+/// Stand-in for the `ps` run that returns a scripted process list.
+private func processList(_ output: String) -> WeztermLocator.Runner {
+    { _, _, _ in
+        ProcessResult(status: 0, stdout: Data(output.utf8), timedOut: false, launchError: nil)
+    }
+}
+
 private final class ClockBox: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: Date
@@ -108,6 +121,7 @@ private final class ClockBox: @unchecked Sendable {
                 "the file:// cwd is decoded to a plain path")
         #expect(panes[0].isActive, "is_active decodes")
         #expect(panes[0].cmdline.isEmpty, "the installed CLI omits cmdline")
+        #expect(panes[0].tty == "ttys004", "the /dev/ prefix is stripped off tty_name")
     }
 
     @Test func testDecodeToleratesMissingAndStringCmdline() throws {
@@ -202,6 +216,7 @@ private final class ClockBox: @unchecked Sendable {
         let runner = RunnerStub(stdout: stdout)
         let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
+                                     processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
                                      now: { clock.value })
@@ -252,12 +267,117 @@ private final class ClockBox: @unchecked Sendable {
         #expect(match.paneID == 6, "a path containing opencode is not the opencode binary")
     }
 
+    // MARK: - tty stage
+
+    @Test func testTTYHostingOpencodeOutranksAPlainPane() throws {
+        // The live build sends no cmdline, so this is the rung that has to
+        // carry the jump: the active pane is a plain zsh in the same directory.
+        let data = panesData([
+            paneEntry(10, tabID: 3, cwd: "/Users/x/repo", active: true, tty: "/dev/ttys000"),
+            paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: false, tty: "/dev/ttys004"),
+        ])
+        let panes = try #require(WeztermPane.decode(data))
+
+        let match = try #require(WeztermLocator.match(directory: "/Users/x/repo",
+                                                      in: panes,
+                                                      opencodeTties: ["ttys004"]))
+        #expect(match.paneID == 5, "the pane whose tty hosts opencode wins")
+    }
+
+    @Test func testDaemonWithoutATtyDoesNotQualify() throws {
+        let ps = """
+        ??       /Users/fanzhen/.opencode/bin/opencode serve --service
+        ??       /bin/zsh -c ps -axo tty=,command= | grep -i opencode
+        ttys009  grep -i opencode
+        ttys000  -zsh
+        """
+        let tties = WeztermLocator.opencodeTties(fromProcessList: ps)
+        #expect(tties.isEmpty, "a ttyless daemon and grep rows never qualify")
+
+        let data = panesData([
+            paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: false, tty: "/dev/ttys004"),
+            paneEntry(10, tabID: 3, cwd: "/Users/x/repo", active: true, tty: "/dev/ttys000"),
+        ])
+        let panes = try #require(WeztermPane.decode(data))
+
+        let match = try #require(WeztermLocator.match(directory: "/Users/x/repo",
+                                                      in: panes,
+                                                      opencodeTties: tties))
+        #expect(match.paneID == 10, "with no qualifying tty the directory ladder decides")
+    }
+
+    @Test func testTTYNormalizationAcceptsBothForms() throws {
+        #expect(WeztermPane.normalizeTTY("/dev/ttys012") == "ttys012",
+                "WezTerm's device path is reduced to the bare name")
+        #expect(WeztermPane.normalizeTTY("ttys012") == "ttys012",
+                "ps' bare name is already normalized")
+        #expect(WeztermPane.normalizeTTY("??") == "", "a no-terminal marker normalizes to nothing")
+
+        // ps prints the bare name, the pane reports the device path: they meet.
+        let tties = WeztermLocator.opencodeTties(fromProcessList: "ttys008  opencode -c\n")
+        #expect(tties == ["ttys008"], "the interactive TUI's tty is collected")
+
+        let data = panesData([
+            paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: false, tty: "/dev/ttys008"),
+        ])
+        let panes = try #require(WeztermPane.decode(data))
+        #expect(WeztermLocator.match(directory: "/Users/x/repo",
+                                    in: panes,
+                                    opencodeTties: tties)?.paneID == 5,
+                "the two spellings compare equal")
+    }
+
+    @Test func testTTYSetIsCachedWithThePaneList() throws {
+        let stdout = panesData([
+            paneEntry(10, tabID: 3, cwd: "/Users/x/repo", active: true, tty: "/dev/ttys000"),
+            paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: false, tty: "/dev/ttys004"),
+        ])
+        let runner = RunnerStub(stdout: stdout)
+        let psRunner = RunnerStub(stdout: Data("ttys004  opencode -c\n".utf8))
+        let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
+        let locator = WeztermLocator(runner: runner.run,
+                                     processRunner: psRunner.run,
+                                     isExecutable: { _ in true },
+                                     onPath: { "/fake/wezterm" },
+                                     now: { clock.value })
+
+        #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5,
+                "the tty stage picks the opencode pane")
+        #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5)
+        #expect(psRunner.callCount == 1, "the tty set rides the pane list's cache entry")
+        #expect(psRunner.calls.first?.executable == WeztermLocator.psExecutable)
+        #expect(psRunner.calls.first?.arguments == WeztermLocator.psArguments,
+                "the process list uses the documented ps invocation")
+
+        clock.advance(3)
+        #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5)
+        #expect(psRunner.callCount == 2, "the tty set is refreshed with the pane list")
+    }
+
+    @Test func testFailedProcessListFallsBackToTheDirectoryLadder() throws {
+        let stdout = panesData([
+            paneEntry(10, tabID: 3, cwd: "/Users/x/repo", active: true, tty: "/dev/ttys000"),
+            paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: false, tty: "/dev/ttys004"),
+        ])
+        let psRunner = RunnerStub(stdout: Data(),
+                                  failure: ProcessResult(status: 1, stdout: Data(),
+                                                         timedOut: false, launchError: nil))
+        let locator = WeztermLocator(runner: RunnerStub(stdout: stdout).run,
+                                     processRunner: psRunner.run,
+                                     isExecutable: { _ in true },
+                                     onPath: { "/fake/wezterm" })
+
+        #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 10,
+                "a failed ps degrades to the plain directory fallback")
+    }
+
     @Test func testActivateSendsTabThenPane() throws {
         let stdout = panesData([
             paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: true),
         ])
         let runner = RunnerStub(stdout: stdout)
         let locator = WeztermLocator(runner: runner.run,
+                                     processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" })
         let pane = try #require(WeztermPane.decode(stdout)?.first)
@@ -278,6 +398,7 @@ private final class ClockBox: @unchecked Sendable {
                                 failure: ProcessResult(status: 1, stdout: Data(),
                                                        timedOut: false, launchError: nil))
         let locator = WeztermLocator(runner: runner.run,
+                                     processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" })
         let pane = try #require(WeztermPane.decode(stdout)?.first)
@@ -294,6 +415,7 @@ private final class ClockBox: @unchecked Sendable {
                                                        timedOut: false, launchError: nil))
         let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
+                                     processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
                                      now: { clock.value })
@@ -310,6 +432,7 @@ private final class ClockBox: @unchecked Sendable {
                                                        timedOut: true, launchError: nil))
         let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
+                                     processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
                                      now: { clock.value })

@@ -5,6 +5,10 @@ import Foundation
 /// Only the fields the jump needs are kept. `cmdline` is decoded as an array of
 /// argv strings, as a single string, or absent (the installed 2024 build omits
 /// it entirely); an empty command line never matches the opencode stage.
+///
+/// `tty_name` arrives as `/dev/ttys004` and is kept in the bare `ttys004` form
+/// so it can be compared with the names `ps` prints. It is empty when the build
+/// omits the field, which only disables the tty stage for that pane.
 struct WeztermPane: Equatable {
     let paneID: Int
     let tabID: Int
@@ -12,6 +16,8 @@ struct WeztermPane: Equatable {
     let cwd: String
     let isActive: Bool
     let cmdline: [String]
+    /// The pane's terminal device without the `/dev/` prefix, or "" when unknown.
+    let tty: String
 
     /// Decodes the CLI's JSON array. Entries without pane/tab ids are skipped;
     /// every other field is optional.
@@ -29,8 +35,22 @@ struct WeztermPane: Equatable {
                                tabID: tabID,
                                cwd: cwdPath(entry["cwd"] as? String ?? ""),
                                isActive: entry["is_active"] as? Bool ?? false,
-                               cmdline: cmdline(entry["cmdline"]))
+                               cmdline: cmdline(entry["cmdline"]),
+                               tty: normalizeTTY(entry["tty_name"] as? String ?? ""))
         }
+    }
+
+    /// Reduces a terminal device to its bare name.
+    ///
+    /// WezTerm reports `/dev/ttys004`; `ps` reports `ttys004`. Stripping the
+    /// device prefix on both sides is what lets the two lists meet. Blank input
+    /// stays blank, and `ps`' no-terminal placeholder (`??`) is dropped so it
+    /// can never match a pane.
+    static func normalizeTTY(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        let bare = trimmed.hasPrefix("/dev/") ? String(trimmed.dropFirst("/dev/".count)) : trimmed
+        if bare == "??" || bare == "?" || bare == "-" { return "" }
+        return bare
     }
 
     /// The CLI sends `file:///Users/...`; tolerate a plain path as well.
@@ -55,8 +75,8 @@ struct WeztermPane: Equatable {
 ///
 /// Every method blocks while it spawns the CLI; callers run the locator on a
 /// background queue. Work is serialized on the locator's own queue and the pane
-/// list is cached for a couple of seconds, so a card tap followed by a chip tap
-/// does not pay for two listings.
+/// list plus the opencode tty set are cached together for a couple of seconds,
+/// so a card tap followed by a chip tap does not pay for two listings.
 ///
 /// Sendability: the mutable caches are touched only on `queue`, the log throttle
 /// only under `errorLock`; the injected closures are called from that queue.
@@ -81,23 +101,34 @@ final class WeztermLocator: @unchecked Sendable {
     /// ProcessRunner adds, so a wedged mux cannot hold a jump for long.
     static let cliTimeout: TimeInterval = 3
 
+    /// The process list behind the tty stage. `tty=` drops the header and gives
+    /// the device name first, which is what the parser keys on.
+    static let psExecutable = "/bin/ps"
+    static let psArguments = ["-axo", "tty=,command="]
+    /// Same bound as the CLI run: a wedged `ps` must not hold a jump.
+    static let psTimeout: TimeInterval = 3
+
     private let runner: Runner
+    /// The process-list runner, injectable so tests never spawn `ps`.
+    private let processRunner: Runner
     private let isExecutable: (String) -> Bool
     private let onPath: () -> String?
     private let now: () -> Date
 
     private let queue = DispatchQueue(label: "local.ribbon.wezterm")
     private var resolvedBinary: String?
-    private var cachedPanes: (panes: [WeztermPane], at: Date)?
+    private var cachedPanes: (panes: [WeztermPane], opencodeTties: Set<String>, at: Date)?
 
     private let errorLock = NSLock()
     private var lastErrorLog = Date.distantPast
 
     init(runner: @escaping Runner = WeztermLocator.runProcess,
+         processRunner: @escaping Runner = WeztermLocator.runProcess,
          isExecutable: @escaping (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) },
          onPath: @escaping () -> String? = { ToolLocator.find("wezterm", searchPATH: true) },
          now: @escaping () -> Date = Date.init) {
         self.runner = runner
+        self.processRunner = processRunner
         self.isExecutable = isExecutable
         self.onPath = onPath
         self.now = now
@@ -119,9 +150,16 @@ final class WeztermLocator: @unchecked Sendable {
     /// First panes running opencode in the session's directory, then any pane in
     /// that directory. An empty directory never matches: there is nothing to
     /// look up. Within a stage the active pane wins; with no active pane the
-    /// lowest pane id wins. The cmdline stage is vacuous on WezTerm builds that
-    /// omit `cmdline`; the directory fallback still lands on the opencode pane
-    /// as long as it is the active pane in that directory.
+    /// lowest pane id wins.
+    ///
+    /// The "runs opencode" stage has two doors, because not every WezTerm build
+    /// can answer the same way. The `cmdline` field is absent on the installed
+    /// build, so that door is empty there; the tty door exists for exactly that
+    /// case. A pane runs opencode when its `tty_name` hosts an interactive
+    /// `opencode` process, as collected by `opencodeTties(fromProcessList:)`.
+    /// Matching either door is enough, and both are ranked above the plain
+    /// directory fallback so a silent zsh pane in the same directory cannot win
+    /// just by being active.
     ///
     /// `is_active` is per tab: several windows can each have an active pane, so
     /// the ladder may pick a background window's pane. The JSON carries no
@@ -130,15 +168,61 @@ final class WeztermLocator: @unchecked Sendable {
     /// An exact session-to-pane mapping built from a `tui.session.select` hint
     /// remains future work: the live payload has not been observed, so matching
     /// stays directory-based for now.
-    static func match(directory: String, in panes: [WeztermPane]) -> WeztermPane? {
+    static func match(directory: String,
+                      in panes: [WeztermPane],
+                      opencodeTties: Set<String> = []) -> WeztermPane? {
         guard !directory.isEmpty else { return nil }
         let target = normalizePath(directory)
         guard !target.isEmpty else { return nil }
         let sameDirectory = panes.filter { normalizePath($0.cwd) == target }
         let runsOpencode = sameDirectory.filter { pane in
-            pane.cmdline.contains { ($0 as NSString).lastPathComponent == "opencode" }
+            runsOpencodeByCmdline(pane) || runsOpencodeOnTTY(pane, opencodeTties: opencodeTties)
         }
         return best(runsOpencode) ?? best(sameDirectory)
+    }
+
+    /// The original door: the pane's command line names the opencode binary.
+    private static func runsOpencodeByCmdline(_ pane: WeztermPane) -> Bool {
+        pane.cmdline.contains { ($0 as NSString).lastPathComponent == "opencode" }
+    }
+
+    /// The door that works without `cmdline`: the pane's tty hosts opencode.
+    ///
+    /// An unknown tty (the field is missing, or `ps` reported no terminal)
+    /// never matches, so a missing `tty_name` only costs this stage its vote.
+    private static func runsOpencodeOnTTY(_ pane: WeztermPane,
+                                          opencodeTties: Set<String>) -> Bool {
+        !pane.tty.isEmpty && opencodeTties.contains(pane.tty)
+    }
+
+    /// Parses `ps -axo tty=,command=` output into the terminals hosting opencode.
+    ///
+    /// A row qualifies only when its command's executable is exactly `opencode`
+    /// and the row has a real tty. Both halves matter: the shared daemon
+    /// (`opencode serve --service`) has no tty and must not qualify, and a
+    /// command whose path merely contains "opencode" (an editor, a grep) is not
+    /// the binary. Rows are shaped `ttys004  opencode -c`, or
+    /// `??       /path/opencode serve --service` for a process with no
+    /// controlling terminal.
+    static func opencodeTties(fromProcessList output: String) -> Set<String> {
+        var tties: Set<String> = []
+        for line in output.split(whereSeparator: \.isNewline) {
+            let fields = line.split(maxSplits: 1,
+                                    omittingEmptySubsequences: true,
+                                    whereSeparator: \.isWhitespace)
+            guard fields.count == 2 else { continue }
+            let tty = WeztermPane.normalizeTTY(String(fields[0]))
+            guard !tty.isEmpty else { continue }
+            let command = fields[1]
+            guard let executable = command.split(whereSeparator: \.isWhitespace).first else {
+                continue
+            }
+            guard (String(executable) as NSString).lastPathComponent == "opencode" else {
+                continue
+            }
+            tties.insert(tty)
+        }
+        return tties
     }
 
     /// Active panes first, then the smallest pane id.
@@ -158,16 +242,21 @@ final class WeztermLocator: @unchecked Sendable {
 
     /// Lists the panes once per `cacheLifetime` and applies the ladder.
     ///
-    /// Blocking: spawns the CLI on the locator queue.
+    /// The pane list and the opencode tty set are one cache entry: they are
+    /// collected together because the ladder needs both. Blocking: spawns the
+    /// CLI (and `ps`) on the locator queue.
     func locatePane(directory: String) -> WeztermPane? {
         queue.sync {
             if let cached = cachedPanes,
                now().timeIntervalSince(cached.at) < Self.cacheLifetime {
-                return Self.match(directory: directory, in: cached.panes)
+                return Self.match(directory: directory,
+                                  in: cached.panes,
+                                  opencodeTties: cached.opencodeTties)
             }
             guard let panes = listPanes() else { return nil }
-            cachedPanes = (panes, now())
-            return Self.match(directory: directory, in: panes)
+            let tties = collectOpencodeTties()
+            cachedPanes = (panes, tties, now())
+            return Self.match(directory: directory, in: panes, opencodeTties: tties)
         }
     }
 
@@ -213,6 +302,29 @@ final class WeztermLocator: @unchecked Sendable {
             return nil
         }
         return WeztermPane.decode(result.stdout)
+    }
+
+    /// The ttys hosting an interactive opencode, best effort.
+    ///
+    /// A failed or timed-out `ps` yields the empty set rather than failing the
+    /// jump: the ladder then degrades to the directory fallback, which is what
+    /// it did before this stage existed.
+    private func collectOpencodeTties() -> Set<String> {
+        let result = processRunner(Self.psExecutable, Self.psArguments, Self.psTimeout)
+        if result.timedOut {
+            logThrottled("ps timed out")
+            return []
+        }
+        if let error = result.launchError {
+            logThrottled("ps failed: \(error)")
+            return []
+        }
+        guard result.status == 0 else {
+            logThrottled("ps exit \(result.status)")
+            return []
+        }
+        guard let output = String(data: result.stdout, encoding: .utf8) else { return [] }
+        return Self.opencodeTties(fromProcessList: output)
     }
 
     private func binaryPath() -> String? {
