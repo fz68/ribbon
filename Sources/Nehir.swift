@@ -10,11 +10,11 @@ import Darwin
 /// and those dirs must be searched.
 enum Nehir {
     /// The most app icons one workspace chip shows.
-    static let maxAppsPerWorkspace = 3
+    static let maxAppsPerWorkspace = Theme.Layout.appsPerWorkspace
 
     static let queue = DispatchQueue(label: "local.ribbon.nehir")
     static let reapQueue = DispatchQueue(label: "local.ribbon.nehir.reap", qos: .utility)
-    private static let errorLock = NSLock()
+    static let errorLog = ThrottledLogger()
     private static let focusMapLock = NSLock()
 
     /// Chip labels are Nehir display names, but `focus-name` reads numeric
@@ -45,14 +45,6 @@ enum Nehir {
         let result = ProcessRunner.run(binary, ["ping"], timeout: 3)
         return result.launchError == nil && !result.timedOut && result.status == 0
     }()
-
-    static var lastChange: (() -> Void)?
-    static var child: Process?
-    static var childPipe: Pipe?
-    static var restartWork: DispatchWorkItem?
-    static var pollTimer: DispatchSourceTimer?
-    static var stopping = false
-    private static var lastErrorLog = Date.distantPast
 
     static func list() -> [Workspace]? {
         guard let binary else {
@@ -180,31 +172,10 @@ enum Nehir {
     }
 
     static func run(_ binary: String, _ arguments: [String]) -> Data? {
-        let result = ProcessRunner.run(binary, arguments, timeout: 5)
-        if result.timedOut {
-            logThrottled("nehirctl \(arguments.joined(separator: " ")) timed out")
-            return nil
-        }
-        if let error = result.launchError {
-            logThrottled("nehirctl \(arguments.joined(separator: " ")) failed: \(error)")
-            return nil
-        }
-        guard result.status == 0 else {
-            logThrottled("nehirctl \(arguments.joined(separator: " ")) exited \(result.status)")
-            return nil
-        }
-        return result.stdout
+        ProcessRunner.output(ProcessRunner.run(binary, arguments, timeout: 5), label: "nehirctl", arguments: arguments, throttle: errorLog)
     }
 
     static func logThrottled(_ message: String) {
-        errorLock.lock()
-        let now = Date()
-        guard now.timeIntervalSince(lastErrorLog) >= 60 else {
-            errorLock.unlock()
-            return
-        }
-        lastErrorLog = now
-        errorLock.unlock()
-        log(message)
+        errorLog.emit(message)
     }
 }

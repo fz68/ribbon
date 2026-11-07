@@ -49,46 +49,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             item.button?.title = "R"
         }
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Re-present", action: #selector(rePresent), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: ""))
-        let strip = NSMenuItem(title: "Show Control Strip", action: #selector(toggleControlStrip), keyEquivalent: "")
-        menu.addItem(strip)
-        controlStripItem = strip
-        menu.addItem(NSMenuItem(title: "Set App+ControlStrip mode", action: #selector(setAppWithControlStripMode), keyEquivalent: ""))
-
-        // The OpenCode agent chip switch. A checkmark item, like the Control
-        // Strip title, reflects the live state and takes effect without a restart.
-        let agentChip = NSMenuItem(title: "Agent Chip", action: #selector(toggleAgentChip), keyEquivalent: "")
-        agentChip.state = AgentConfig.isEnabled ? .on : .off
-        menu.addItem(agentChip)
-        agentChipItem = agentChip
-
-        // Read-out of the selected keyboard input source.
-        let inputSource = NSMenuItem(title: "Input Source: -", action: nil, keyEquivalent: "")
-        inputSource.isEnabled = false
-        menu.addItem(inputSource)
-        inputSourceItem = inputSource
-
-        // Per source colour of the indicator line.
-        let imeColor = NSMenuItem(title: "IME Color", action: nil, keyEquivalent: "")
-        imeColor.submenu = NSMenu()
-        menu.addItem(imeColor)
-        imeColorItem = imeColor
-
-        // Which edge of the bar the indicator line is drawn on.
-        let imeLinePosition = NSMenuItem(title: "IME Line Position", action: nil, keyEquivalent: "")
-        imeLinePosition.submenu = NSMenu()
-        menu.addItem(imeLinePosition)
-        imeLinePositionItem = imeLinePosition
-
-        // Clock format presets and the config file shortcut.
-        let clockFormat = NSMenuItem(title: "Clock Format", action: nil, keyEquivalent: "")
-        clockFormat.submenu = NSMenu()
-        menu.addItem(clockFormat)
-        clockFormatItem = clockFormat
-
+        menu.addItem(makeRePresentItem())
+        menu.addItem(makeRefreshItem())
+        menu.addItem(makeControlStripToggleItem())
+        menu.addItem(makeStripModeItem())
+        menu.addItem(makeAgentChipItem())
+        menu.addItem(makeInputSourceItem())
+        menu.addItem(makeIMEColorItem())
+        menu.addItem(makeIMELinePositionItem())
+        menu.addItem(makeClockFormatItem())
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: ""))
+        menu.addItem(makeQuitItem())
         for entry in menu.items { entry.target = self }
         item.menu = menu
         statusItem = item
@@ -96,6 +67,69 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildIMEColorMenu()
         rebuildIMELinePositionMenu()
         rebuildClockFormatMenu()
+    }
+
+    private func makeRePresentItem() -> NSMenuItem {
+        NSMenuItem(title: "Re-present", action: #selector(rePresent), keyEquivalent: "")
+    }
+
+    private func makeRefreshItem() -> NSMenuItem {
+        NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "")
+    }
+
+    private func makeControlStripToggleItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Show Control Strip", action: #selector(toggleControlStrip), keyEquivalent: "")
+        controlStripItem = item
+        return item
+    }
+
+    private func makeStripModeItem() -> NSMenuItem {
+        NSMenuItem(title: "Set App+ControlStrip mode", action: #selector(setAppWithControlStripMode), keyEquivalent: "")
+    }
+
+    /// The OpenCode agent chip switch. A checkmark item, like the Control
+    /// Strip title, reflects the live state and takes effect without a restart.
+    private func makeAgentChipItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Agent Chip", action: #selector(toggleAgentChip), keyEquivalent: "")
+        item.state = AgentConfig.isEnabled ? .on : .off
+        agentChipItem = item
+        return item
+    }
+
+    /// Read-out of the selected keyboard input source.
+    private func makeInputSourceItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Input Source: -", action: nil, keyEquivalent: "")
+        item.isEnabled = false
+        inputSourceItem = item
+        return item
+    }
+
+    /// Per source colour of the indicator line.
+    private func makeIMEColorItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "IME Color", action: nil, keyEquivalent: "")
+        item.submenu = NSMenu()
+        imeColorItem = item
+        return item
+    }
+
+    /// Which edge of the bar the indicator line is drawn on.
+    private func makeIMELinePositionItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "IME Line Position", action: nil, keyEquivalent: "")
+        item.submenu = NSMenu()
+        imeLinePositionItem = item
+        return item
+    }
+
+    /// Clock format presets and the config file shortcut.
+    private func makeClockFormatItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Clock Format", action: nil, keyEquivalent: "")
+        item.submenu = NSMenu()
+        clockFormatItem = item
+        return item
+    }
+
+    private func makeQuitItem() -> NSMenuItem {
+        NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "")
     }
 
     /// The menu item always names the action the next click performs.

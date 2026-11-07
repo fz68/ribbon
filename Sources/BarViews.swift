@@ -136,7 +136,7 @@ final class ChipView: NSView {
         // defaultHigh compression so long names truncate, but overflowing icons
         // are hidden by layout() instead of pushing the label off the chip.
         let contentTrailing = stack.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Theme.Layout.chipInset)
-        contentTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.appLabelTrailingPriority)
+        contentTrailing.priority = NSLayoutConstraint.Priority(Theme.Layout.chipContentTrailingPriority)
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.Layout.chipInset),

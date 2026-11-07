@@ -49,6 +49,8 @@ enum Theme {
     static let agentBusyBorder: UInt32 = 0xff7dcfff
     /// Fill of the chip for the three seconds after the last session goes idle.
     static let agentDoneFill: UInt32 = 0xffc3e88d
+    /// Border of the approval card after a failed reply. The palette's red entry.
+    static let agentCardErrorBorder: UInt32 = 0xffff757f
 
     /// The pixel metrics the bar lays out with.
     enum Layout {
@@ -88,10 +90,15 @@ enum Theme {
         static let chipMinWidth: CGFloat = 40
         /// Side length of an app icon inside a chip.
         static let iconSize: CGFloat = 12
+        /// How many app names one workspace chip lists before the rest are dropped.
+        static let appsPerWorkspace: Int = 3
         /// Cap on the front-app label so it never crowds the right cluster.
         static let appLabelMaxWidth: CGFloat = 160
         /// Priority of the constraint that keeps the app label clear of the right cluster.
         static let appLabelTrailingPriority: Float = 999
+        /// Priority of the constraint that caps a chip's own content stack. Shares the
+        /// value of `appLabelTrailingPriority` but is a separate constraint.
+        static let chipContentTrailingPriority: Float = 999
         /// Font size of the labels in the right cluster and the app label.
         static let labelFontSize: CGFloat = 12
         /// Fixed width of the battery slot: it holds the percentage ("99%" is the

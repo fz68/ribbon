@@ -80,7 +80,7 @@ final class AgentCardView: NSView {
     private var currentTarget: AgentCardTarget?
 
     /// Red used for the failed-reply flash; the palette's red entry.
-    private static let errorBorder: UInt32 = 0xffff757f
+    private static let errorBorder: UInt32 = Theme.agentCardErrorBorder
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0, width: AgentCardView.width,

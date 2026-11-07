@@ -298,6 +298,7 @@ final class EventStream {
             }
             finish(generation: generation)
         } catch {
+            log("agent event stream failed: \(error)")
             finish(generation: generation)
         }
     }

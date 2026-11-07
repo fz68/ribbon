@@ -290,3 +290,25 @@ enum ProcessRunner {
         }
     }
 }
+
+extension ProcessRunner {
+    /// The stdout of a finished run, or nil on timeout, launch failure or a
+    /// non-zero exit; each failure is reported once per minute through `throttle`.
+    static func output(_ result: ProcessResult, label: String, arguments: [String],
+                       throttle: ThrottledLogger) -> Data? {
+        let joined = arguments.joined(separator: " ")
+        if result.timedOut {
+            throttle.emit("\(label) \(joined) timed out")
+            return nil
+        }
+        if let error = result.launchError {
+            throttle.emit("\(label) \(joined) failed: \(error)")
+            return nil
+        }
+        guard result.status == 0 else {
+            throttle.emit("\(label) \(joined) exited \(result.status)")
+            return nil
+        }
+        return result.stdout
+    }
+}

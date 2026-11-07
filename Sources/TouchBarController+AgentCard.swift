@@ -208,7 +208,7 @@ extension TouchBarController {
                 } else {
                     log("agent jump app-only")
                 }
-                Self.activateWezTerm()
+                if #available(macOS 14, *) { Self.activateWezTerm() }
             }
         }
     }
@@ -217,6 +217,7 @@ extension TouchBarController {
     ///
     /// The bundle id is the installed app's. If activation is refused, fall back
     /// to asking the workspace to open the bundle, which also launches it.
+    @available(macOS 14, *)
     private static func activateWezTerm() {
         let bundleID = "com.github.wez.wezterm"
         let options: NSApplication.ActivationOptions = [.activateAllWindows]
@@ -224,12 +225,10 @@ extension TouchBarController {
             .runningApplications(withBundleIdentifier: bundleID)
             .first
             .map { app -> Bool in
-                if #available(macOS 14.0, *) {
-                    // The source-aware variant is the supported call on the OS
-                    // this app runs on; the old one covers the 13.0 floor.
-                    return app.activate(from: .current, options: options)
-                }
-                return app.activate(options: options)
+                // The source-aware variant is the supported call on the OS
+                // this app runs on; the old one covers the 13.0 floor.
+                return app.activate(from: .current, options: options)
+                    || app.activate(options: options)
             } ?? false
         guard !activated else { return }
 

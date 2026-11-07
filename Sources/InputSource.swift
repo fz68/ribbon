@@ -21,6 +21,9 @@ enum InputSource {
         ("Purple", "#B388FF"),
     ]
 
+    /// The colour an entry falls back to: the palette's blue.
+    static let defaultColourHex: String = "#4FA3FF"
+
     /// The rainbow stops, from the left edge to the right edge.
     static let rainbowHex: [String] = palette.map(\.hex)
 
@@ -187,7 +190,7 @@ enum InputSource {
         config.sources[id] = Entry(
             name: name,
             line: show,
-            color: color ?? previous?.color ?? "#4FA3FF",
+            color: color ?? previous?.color ?? defaultColourHex,
             rainbow: rainbow
         )
         return store.save(config)
@@ -227,7 +230,7 @@ enum InputSource {
 
     /// The built-in configuration computed from the sources the system lists now.
     private static func liveBuiltInConfiguration() -> Configuration {
-        let fallback = Entry(name: nil, line: true, color: "#4FA3FF", rainbow: false)
+        let fallback = Entry(name: nil, line: true, color: defaultColourHex, rainbow: false)
         var configuration = Configuration(default: fallback, sources: [:])
         // The line is drawn on the bottom edge until the file says otherwise.
         configuration.linePosition = "bottom"

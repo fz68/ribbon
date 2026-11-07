@@ -28,25 +28,30 @@ extension TouchBarController {
         let current = InputSource.current
         let appearance = current.map { InputSource.appearance(for: $0.id) }
         let line = imeLine.frame
-        log(String(format: "layout mode=%@ width=%.0f media=%.0f@%.0f left=%.0f@%.0f app=%.0f@%.0f right=%.0f@%.0f gap=%.0f free=%.0f hidden=%@ ime=%@ line=%d rainbow=%d color=%@ lineFrame=%.0f,%.0f,%.0f,%.0f",
-                  controlStripVisible ? "strip" : "full",
-                  container.bounds.width,
-                  media.width, media.minX,
-                  left.width, left.minX,
-                  app.width, app.minX,
-                  right.width, right.minX,
-                  gap, free,
-                  hidden.isEmpty ? "-" : hidden.joined(separator: ","),
-                  current?.id ?? "-",
-                  (appearance?.show ?? false) ? 1 : 0,
-                  (appearance?.rainbow ?? false) ? 1 : 0,
-                  appearance?.color?.hexString ?? "-",
-                  line.minX, line.minY, line.width, line.height))
+        // Same rounding as the %.0f fields this dump replaced.
+        let n: (CGFloat) -> Int = { Int($0.rounded(.toNearestOrEven)) }
+        log([
+            "layout",
+            "mode=\(controlStripVisible ? "strip" : "full")",
+            "width=\(n(container.bounds.width))",
+            "media=\(n(media.width))@\(n(media.minX))",
+            "left=\(n(left.width))@\(n(left.minX))",
+            "app=\(n(app.width))@\(n(app.minX))",
+            "right=\(n(right.width))@\(n(right.minX))",
+            "gap=\(n(gap))",
+            "free=\(n(free))",
+            "hidden=\(hidden.isEmpty ? "-" : hidden.joined(separator: ","))",
+            "ime=\(current?.id ?? "-")",
+            "line=\((appearance?.show ?? false) ? 1 : 0)",
+            "rainbow=\((appearance?.rainbow ?? false) ? 1 : 0)",
+            "color=\(appearance?.color?.hexString ?? "-")",
+            "lineFrame=\(n(line.minX)),\(n(line.minY)),\(n(line.width)),\(n(line.height))",
+        ].joined(separator: " "))
         // Measure how much width the system grants the canvas and whether a system
         // view occupies the space right of the bar, which the bounds alone cannot show.
         let frameText: (NSRect?) -> String = { frame in
             guard let frame else { return "-" }
-            return String(format: "%.0f,%.0f %.0fx%.0f", frame.minX, frame.minY, frame.width, frame.height)
+            return "\(n(frame.minX)),\(n(frame.minY)) \(n(frame.width))x\(n(frame.height))"
         }
         let superview = container.superview
         let window = container.window
@@ -56,7 +61,12 @@ extension TouchBarController {
             .joined(separator: ",")
         let superviewName = superview.map { String(describing: type(of: $0)) } ?? "-"
         let windowName = window.map { String(describing: type(of: $0)) } ?? "-"
-        log("canvas superview=\(superviewName)(\(frameText(superview?.frame))) window=\(windowName)(\(frameText(window?.frame))) siblings=\(siblings.isEmpty ? "-" : siblings)")
+        log([
+            "canvas",
+            "superview=\(superviewName)(\(frameText(superview?.frame)))",
+            "window=\(windowName)(\(frameText(window?.frame)))",
+            "siblings=\(siblings.isEmpty ? "-" : siblings)",
+        ].joined(separator: " "))
         // One level further up: the panel that hosts the item container. Its own
         // subviews show whether anything else claims the width right of the bar.
         let parent = superview?.superview
@@ -64,7 +74,11 @@ extension TouchBarController {
         let parentSubviews = (parent?.subviews ?? [])
             .map { "\(String(describing: type(of: $0)))(\(frameText($0.frame)))" }
             .joined(separator: ",")
-        log("canvas+ parent=\(parentName)(\(frameText(parent?.frame))) subviews=\(parentSubviews.isEmpty ? "-" : parentSubviews)")
+        log([
+            "canvas+",
+            "parent=\(parentName)(\(frameText(parent?.frame)))",
+            "subviews=\(parentSubviews.isEmpty ? "-" : parentSubviews)",
+        ].joined(separator: " "))
     }
 
     func setupContainer() {

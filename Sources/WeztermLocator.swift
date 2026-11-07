@@ -119,8 +119,7 @@ final class WeztermLocator: @unchecked Sendable {
     private var resolvedBinary: String?
     private var cachedPanes: (panes: [WeztermPane], opencodeTties: Set<String>, at: Date)?
 
-    private let errorLock = NSLock()
-    private var lastErrorLog = Date.distantPast
+    private let errorLog = ThrottledLogger()
 
     init(runner: @escaping Runner = WeztermLocator.runProcess,
          processRunner: @escaping Runner = WeztermLocator.runProcess,
@@ -289,19 +288,12 @@ final class WeztermLocator: @unchecked Sendable {
             return nil
         }
         let result = runner(binary, ["cli", "list", "--format", "json"], Self.cliTimeout)
-        if result.timedOut {
-            logThrottled("wezterm cli list timed out")
+        guard let data = ProcessRunner.output(result, label: "wezterm cli list",
+                                               arguments: ["cli", "list", "--format", "json"],
+                                               throttle: errorLog) else {
             return nil
         }
-        if let error = result.launchError {
-            logThrottled("wezterm cli list failed: \(error)")
-            return nil
-        }
-        guard result.status == 0 else {
-            logThrottled("wezterm cli list exit \(result.status)")
-            return nil
-        }
-        return WeztermPane.decode(result.stdout)
+        return WeztermPane.decode(data)
     }
 
     /// The ttys hosting an interactive opencode, best effort.
@@ -311,19 +303,10 @@ final class WeztermLocator: @unchecked Sendable {
     /// it did before this stage existed.
     private func collectOpencodeTties() -> Set<String> {
         let result = processRunner(Self.psExecutable, Self.psArguments, Self.psTimeout)
-        if result.timedOut {
-            logThrottled("ps timed out")
-            return []
-        }
-        if let error = result.launchError {
-            logThrottled("ps failed: \(error)")
-            return []
-        }
-        guard result.status == 0 else {
-            logThrottled("ps exit \(result.status)")
-            return []
-        }
-        guard let output = String(data: result.stdout, encoding: .utf8) else { return [] }
+        guard let data = ProcessRunner.output(result, label: "ps",
+                                               arguments: Self.psArguments,
+                                               throttle: errorLog) else { return [] }
+        guard let output = String(data: data, encoding: .utf8) else { return [] }
         return Self.opencodeTties(fromProcessList: output)
     }
 
@@ -341,33 +324,14 @@ final class WeztermLocator: @unchecked Sendable {
     @discardableResult
     private func runCLI(_ binary: String, _ arguments: [String], label: String) -> Bool {
         let result = runner(binary, arguments, Self.cliTimeout)
-        if result.timedOut {
-            logThrottled("wezterm cli \(label) timed out")
-            return false
-        }
-        if let error = result.launchError {
-            logThrottled("wezterm cli \(label) failed: \(error)")
-            return false
-        }
-        guard result.status == 0 else {
-            logThrottled("wezterm cli \(label) exit \(result.status)")
-            return false
-        }
-        return true
+        return ProcessRunner.output(result, label: "wezterm cli \(label)",
+                                    arguments: arguments, throttle: errorLog) != nil
     }
 
     /// One error line per minute, so a wedged CLI tapped repeatedly cannot fill
     /// the log.
     private func logThrottled(_ message: String) {
-        errorLock.lock()
-        let now = Date()
-        guard now.timeIntervalSince(lastErrorLog) >= 60 else {
-            errorLock.unlock()
-            return
-        }
-        lastErrorLog = now
-        errorLock.unlock()
-        log(message)
+        errorLog.emit(message)
     }
 
     private static func runProcess(_ executable: String,

@@ -93,86 +93,30 @@ struct AgentSessionStore {
         switch event.type {
         case "session.created":
             guard let id = event.sessionID else { return }
-            ensureSession(id: id, directory: event.directory, now: now)
-            if let name = Self.shortName(directory: event.directory) {
-                sessions[id]?.shortName = name
-            }
-            // Learn the parent when the event carries one. A nil must not clear
-            // a parent learned earlier (from the event or a reconcile).
-            if let parentID = event.parentID {
-                sessions[id]?.parentID = parentID
-            }
-            // Same rule for the jump metadata: only fill, never erase.
-            if let directory = event.directory {
-                sessions[id]?.directory = directory
-            }
-            if let title = event.title {
-                sessions[id]?.title = title
-            }
+            applyCreated(event, id: id, now: now)
         case "session.deleted":
             guard let id = event.sessionID else { return }
             // Deleting the session drops its pending requests with it; the chip
             // must not keep asking about something that no longer exists.
             sessions.removeValue(forKey: id)
-        // Busy/idle has two event vocabularies, both feeding the same flag:
-        //
-        // - 2.1.x: `session.status` (busy / retry / idle) and `session.idle`.
-        // - 2.2.6: `session.execution.started` / `.succeeded` / `.failed` /
-        //   `.interrupted`, mapped by the decoder to the same statusType words.
-        //   `session.status` no longer fires in a normal turn there.
-        //
-        // Both paths may be present on a build that emits both; re-stating a
-        // transition is harmless (busy twice is idempotent, and an idle for a
-        // session that is already idle cannot re-arm the done window).
-        //
-        // The periodic `applyActivePoll` is the backstop: it catches a session
-        // that started while the stream was disconnected and a missed event.
         case "session.status", "session.execution.started",
              "session.execution.succeeded", "session.execution.failed",
              "session.execution.interrupted":
             guard let id = event.sessionID else { return }
-            switch event.statusType {
-            case "busy", "retry":
-                setBusy(true, id: id, now: now, armDone: false)
-            case "idle":
-                // Status transitions are how the service normally reports
-                // idle, so they arm the done window exactly like session.idle.
-                setBusy(false, id: id, now: now, armDone: true)
-            default:
-                break
-            }
+            applyBusyTransition(event, id: id, now: now)
         case "session.idle":
             guard let id = event.sessionID else { return }
             setBusy(false, id: id, now: now, armDone: true)
         case "permission.asked":
-            guard let id = event.sessionID, let requestID = event.permissionID else { return }
-            ensureSession(id: id, directory: event.directory, now: now)
-            addPending(PendingRequest(id: requestID,
-                                     kind: .permission,
-                                     action: event.data["action"] as? String ?? "",
-                                     resources: event.data["resources"] as? [String] ?? [],
-                                     requestedAt: event.created),
-                       to: id, now: now)
+            guard let id = event.sessionID else { return }
+            applyPermissionAsked(event, id: id, now: now)
         case "permission.replied":
             // Matched by request id alone: a reply can arrive for a session the
             // store has already reconciled away, and the id is globally unique.
             removePending(id: event.permissionID)
         case "form.created":
-            guard let id = event.sessionID,
-                  let formID = Self.formID(from: event.data) else { return }
-            ensureSession(id: id, directory: event.directory, now: now)
-            let form = event.data["form"] as? [String: Any]
-            let answerable = Self.answerableField(in: form)
-            addPending(PendingRequest(id: formID,
-                                     kind: .form,
-                                     action: form?["title"] as? String
-                                         ?? event.data["action"] as? String
-                                         ?? event.data["title"] as? String ?? "",
-                                     resources: event.data["resources"] as? [String] ?? [],
-                                     requestedAt: event.created,
-                                     options: answerable?.options ?? [],
-                                     fieldKey: answerable?.key),
-                       to: id, now: now)
+            guard let id = event.sessionID else { return }
+            applyFormCreated(event, id: id, now: now)
         case "form.replied", "form.cancelled":
             // Matched by the form id in `data.id` (live replied payload) or the
             // older nested/flat shapes, exactly like `form.created`.
@@ -187,6 +131,80 @@ struct AgentSessionStore {
         default:
             break
         }
+    }
+
+    /// The `session.created` writes: ensure, then fill-only metadata.
+    private mutating func applyCreated(_ event: AgentEvent, id: String, now: Date) {
+        ensureSession(id: id, directory: event.directory, now: now)
+        if let name = Self.shortName(directory: event.directory) {
+            sessions[id]?.shortName = name
+        }
+        // Learn the parent when the event carries one. A nil must not clear
+        // a parent learned earlier (from the event or a reconcile).
+        if let parentID = event.parentID {
+            sessions[id]?.parentID = parentID
+        }
+        // Same rule for the jump metadata: only fill, never erase.
+        if let directory = event.directory {
+            sessions[id]?.directory = directory
+        }
+        if let title = event.title {
+            sessions[id]?.title = title
+        }
+    }
+
+    private mutating func applyBusyTransition(_ event: AgentEvent, id: String, now: Date) {
+        // Busy/idle has two event vocabularies, both feeding the same flag:
+        //
+        // - 2.1.x: `session.status` (busy / retry / idle) and `session.idle`.
+        // - 2.2.6: `session.execution.started` / `.succeeded` / `.failed` /
+        //   `.interrupted`, mapped by the decoder to the same statusType words.
+        //   `session.status` no longer fires in a normal turn there.
+        //
+        // Both paths may be present on a build that emits both; re-stating a
+        // transition is harmless (busy twice is idempotent, and an idle for a
+        // session that is already idle cannot re-arm the done window).
+        //
+        // The periodic `applyActivePoll` is the backstop: it catches a session
+        // that started while the stream was disconnected and a missed event.
+        switch event.statusType {
+        case "busy", "retry":
+            setBusy(true, id: id, now: now, armDone: false)
+        case "idle":
+            // Status transitions are how the service normally reports
+            // idle, so they arm the done window exactly like session.idle.
+            setBusy(false, id: id, now: now, armDone: true)
+        default:
+            break
+        }
+    }
+
+    private mutating func applyPermissionAsked(_ event: AgentEvent, id: String, now: Date) {
+        guard let requestID = event.permissionID else { return }
+        ensureSession(id: id, directory: event.directory, now: now)
+        addPending(PendingRequest(id: requestID,
+                                 kind: .permission,
+                                 action: event.data["action"] as? String ?? "",
+                                 resources: event.data["resources"] as? [String] ?? [],
+                                 requestedAt: event.created),
+                   to: id, now: now)
+    }
+
+    private mutating func applyFormCreated(_ event: AgentEvent, id: String, now: Date) {
+        guard let formID = Self.formID(from: event.data) else { return }
+        ensureSession(id: id, directory: event.directory, now: now)
+        let form = event.data["form"] as? [String: Any]
+        let answerable = Self.answerableField(in: form)
+        addPending(PendingRequest(id: formID,
+                                 kind: .form,
+                                 action: form?["title"] as? String
+                                     ?? event.data["action"] as? String
+                                     ?? event.data["title"] as? String ?? "",
+                                 resources: event.data["resources"] as? [String] ?? [],
+                                 requestedAt: event.created,
+                                 options: answerable?.options ?? [],
+                                 fieldKey: answerable?.key),
+                   to: id, now: now)
     }
 
     /// Replaces the whole known state with a reconciled snapshot.

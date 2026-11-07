@@ -179,23 +179,9 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
             self?.scheduleRefresh()
         }
         scheduleRefresh()
-        let timer = Timer(timeInterval: Theme.Timing.workspaceRefresh, repeats: true) { [weak self] _ in
-            self?.scheduleRefresh()
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        refreshTimer = timer
+        startTimers()
         updateClock()
         updateBattery()
-        let clock = Timer(timeInterval: Theme.Timing.clockRefresh, repeats: true) { [weak self] _ in
-            self?.updateClock()
-        }
-        RunLoop.main.add(clock, forMode: .common)
-        clockTimer = clock
-        let battery = Timer(timeInterval: Theme.Timing.batteryRefresh, repeats: true) { [weak self] _ in
-            self?.updateBattery()
-        }
-        RunLoop.main.add(battery, forMode: .common)
-        batteryTimer = battery
 
         // Watch the selected keyboard input source and draw the indicator line.
         imeWatcher.onChange = { [weak self] id, name in
@@ -210,6 +196,25 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         log("control strip symbols=\(Self.availableStripSymbols.joined(separator: ","))")
 
         pollMediaState()
+    }
+
+    /// Installs the repeating workspace-refresh, clock and battery timers on the main runloop.
+    private func startTimers() {
+        let timer = Timer(timeInterval: Theme.Timing.workspaceRefresh, repeats: true) { [weak self] _ in
+            self?.scheduleRefresh()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        refreshTimer = timer
+        let clock = Timer(timeInterval: Theme.Timing.clockRefresh, repeats: true) { [weak self] _ in
+            self?.updateClock()
+        }
+        RunLoop.main.add(clock, forMode: .common)
+        clockTimer = clock
+        let battery = Timer(timeInterval: Theme.Timing.batteryRefresh, repeats: true) { [weak self] _ in
+            self?.updateBattery()
+        }
+        RunLoop.main.add(battery, forMode: .common)
+        batteryTimer = battery
     }
 
     func present() {
@@ -257,12 +262,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         pendingRefresh?.cancel()
         pendingRefresh = nil
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        clockTimer?.invalidate()
-        clockTimer = nil
-        batteryTimer?.invalidate()
-        batteryTimer = nil
+        stopTimers()
         mediaTimer?.invalidate()
         mediaTimer = nil
         stopAgentBridge()
@@ -272,6 +272,16 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         workspaceBackend.stopMonitoring()
         dismiss()
         log("shutting down")
+    }
+
+    /// Invalidates the timers `startTimers` installed on the main runloop.
+    private func stopTimers() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        clockTimer?.invalidate()
+        clockTimer = nil
+        batteryTimer?.invalidate()
+        batteryTimer = nil
     }
 
     func refreshNow() {

@@ -3,11 +3,11 @@ import Darwin
 
 enum AeroSpace {
     /// The most app icons one workspace chip shows.
-    static let maxAppsPerWorkspace = 3
+    static let maxAppsPerWorkspace = Theme.Layout.appsPerWorkspace
 
     static let queue = DispatchQueue(label: "local.ribbon.aerospace")
     static let reapQueue = DispatchQueue(label: "local.ribbon.aerospace.reap", qos: .utility)
-    private static let errorLock = NSLock()
+    static let errorLog = ThrottledLogger()
 
     /// Test hook: when non-nil, used instead of the discovered binary.
     static var binaryOverride: String?
@@ -23,14 +23,6 @@ enum AeroSpace {
         let result = ProcessRunner.run(binary, ["subscribe", "--help"], timeout: 3)
         return result.launchError == nil && !result.timedOut && result.status == 0
     }()
-
-    static var lastChange: (() -> Void)?
-    static var child: Process?
-    static var childPipe: Pipe?
-    static var restartWork: DispatchWorkItem?
-    static var pollTimer: DispatchSourceTimer?
-    static var stopping = false
-    private static var lastErrorLog = Date.distantPast
 
     static func list() -> [Workspace]? {
         guard let binary else {
@@ -109,20 +101,7 @@ enum AeroSpace {
     }
 
     static func run(_ binary: String, _ arguments: [String]) -> Data? {
-        let result = ProcessRunner.run(binary, arguments, timeout: 5)
-        if result.timedOut {
-            logThrottled("aerospace \(arguments.joined(separator: " ")) timed out")
-            return nil
-        }
-        if let error = result.launchError {
-            logThrottled("aerospace \(arguments.joined(separator: " ")) failed: \(error)")
-            return nil
-        }
-        guard result.status == 0 else {
-            logThrottled("aerospace \(arguments.joined(separator: " ")) exited \(result.status)")
-            return nil
-        }
-        return result.stdout
+        ProcessRunner.output(ProcessRunner.run(binary, arguments, timeout: 5), label: "aerospace", arguments: arguments, throttle: errorLog)
     }
 
     static func lines(_ data: Data) -> [String] {
@@ -134,21 +113,11 @@ enum AeroSpace {
     }
 
     static func logThrottled(_ message: String) {
-        errorLock.lock()
-        let now = Date()
-        guard now.timeIntervalSince(lastErrorLog) >= 60 else {
-            errorLock.unlock()
-            return
-        }
-        lastErrorLog = now
-        errorLock.unlock()
-        log(message)
+        errorLog.emit(message)
     }
 
     /// Test hook: re-arms the throttle gate, so the next call always writes.
     static func resetLogThrottleForTesting() {
-        errorLock.lock()
-        lastErrorLog = Date.distantPast
-        errorLock.unlock()
+        errorLog.resetForTesting()
     }
 }

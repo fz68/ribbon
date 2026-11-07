@@ -77,8 +77,7 @@ final class AgentBridge: @unchecked Sendable {
     /// Polls the authoritative running set; see `pollActiveSessions`.
     private var activePollTimer: DispatchSourceTimer?
     private var activePollInFlight = false
-    private let pollLogLock = NSLock()
-    private var lastPollErrorLog = Date.distantPast
+    private let pollLog = ThrottledLogger()
     /// Makes a slow reconcile unable to overwrite a newer one, and a reconcile
     /// for an old endpoint unable to touch the store at all.
     private var reconcileGeneration = 0
@@ -174,28 +173,9 @@ final class AgentBridge: @unchecked Sendable {
     /// answered the request the card showed.
     func reply(sessionID: String, requestID: String, decision: AgentDecision,
                completion: @escaping (Bool) -> Void) {
-        queue.async { [weak self] in
-            guard let self, let client = self.client else {
-                completion(false)
-                return
-            }
-            let queue = self.queue
-            // The completion is not Sendable; the task only hands it back to the
-            // bridge queue, so wrapping it states that confinement.
-            let result = SendableCompletion(run: completion)
-            Task {
-                let succeeded: Bool
-                do {
-                    try await client.replyPermission(sessionID: sessionID,
-                                                     requestID: requestID,
-                                                     decision: decision)
-                    succeeded = true
-                } catch {
-                    succeeded = false
-                }
-                queue.async { result.run(succeeded) }
-            }
-        }
+        send(completion: completion) { try await $0.replyPermission(sessionID: sessionID,
+                                                                    requestID: requestID,
+                                                                    decision: decision) }
     }
 
     /// Sends one form answer for the form the card locked.
@@ -209,20 +189,28 @@ final class AgentBridge: @unchecked Sendable {
                    fieldKey: String,
                    value: String,
                    completion: @escaping (Bool) -> Void) {
+        send(completion: completion) { try await $0.replyForm(sessionID: sessionID,
+                                                              formID: formID,
+                                                              fieldKey: fieldKey,
+                                                              value: value) }
+    }
+
+    /// Runs one client call on the bridge queue and reports success or failure.
+    private func send(completion: @escaping (Bool) -> Void,
+                      _ call: @escaping @Sendable (OpenCodeClient) async throws -> Void) {
         queue.async { [weak self] in
             guard let self, let client = self.client else {
                 completion(false)
                 return
             }
             let queue = self.queue
+            // The completion is not Sendable; the task only hands it back to the
+            // bridge queue, so wrapping states that confinement.
             let result = SendableCompletion(run: completion)
             Task {
                 let succeeded: Bool
                 do {
-                    try await client.replyForm(sessionID: sessionID,
-                                               formID: formID,
-                                               fieldKey: fieldKey,
-                                               value: value)
+                    try await call(client)
                     succeeded = true
                 } catch {
                     succeeded = false
@@ -422,15 +410,7 @@ final class AgentBridge: @unchecked Sendable {
 
     /// One failure line per minute, like the other throttled subprocess logs.
     private func logPollFailure() {
-        pollLogLock.lock()
-        let now = Date()
-        guard now.timeIntervalSince(lastPollErrorLog) >= 60 else {
-            pollLogLock.unlock()
-            return
-        }
-        lastPollErrorLog = now
-        pollLogLock.unlock()
-        log("agent active poll failed; keeping the last busy state")
+        pollLog.emit("agent active poll failed; keeping the last busy state")
     }
 
     private func publish() {
