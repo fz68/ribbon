@@ -55,7 +55,7 @@ Touch Bar 上增加一个 56pt 的 agent chip, 实时显示本机 opencode 后�
 | A1 | 认证头 | 已验证 | HTTP Basic, 用户名固定 opencode, 密码为 service.json 的 password |
 | A2 | interrupt 端点 | 已验证 | POST /api/session/{sessionID}/interrupt |
 | A3 | 会话列表字段 | 已验证 | 列表项含 title 与 location.directory; 事件信封亦带 location.directory, 会话短名可零请求获得 |
-| A4 | tui.session.select payload | 未验证 | P3 期间实测; 失败则保持 P3 的 wezterm cli 启发式, 不阻塞 P0-P2 |
+| A4 | tui.session.select payload | 未验证 | P4 期间实测; 失败则保持 P3 的 wezterm cli 启发式, 不阻塞 P0-P2 |
 | A5 | form payload | 静态验证 | Form.Info = {id, sessionID, title, metadata, fields}; 卡片交互仍留 P4 实测 |
 | A6 | SSE 格式与 types 过滤 | 已验证 | text/event-stream; ?types= 在 2.1.4 被服务端忽略, 必须客户端本地过滤 |
 
@@ -141,7 +141,7 @@ wezterm cli activate-tab --tab-id T; activate-pane --pane-id P; NSRunningApplica
 
 | 手势 | 有待审批时 | 无待审批时 |
 |---|---|---|
-| 点 chip | 开卡 | 跳转到最活跃会话的 pane |
+| 点 chip | 开卡 | 跳到最近有活动的会话所在 pane |
 | 长按 chip (约 500ms, 阈值进 Theme.Timing) | 跳过当前条目看下一条, 不决策 | 中断当前展示的 busy 会话 (依赖 A2) |
 | 点卡第 1 格 | 跳转, 卡收回 | - |
 
@@ -298,11 +298,18 @@ struct AgentSessionStore {
 文件:
 
 - Sources/WeztermLocator.swift
+- Sources/OpenCode/AgentBridge.swift (snapshot 增加 jump)
+- Sources/OpenCode/AgentCardMachine.swift (AgentCardTarget.directory, AgentJumpTarget)
+- Sources/OpenCode/AgentReconciler.swift (directory passthrough)
+- Sources/OpenCode/AgentSessionStore.swift (directory/title, jumpTarget)
+- Sources/TouchBarController+AgentCard.swift (身份格/无待审批 chip 跳转)
+- Sources/TouchBarController.swift (locator + jump queue)
 - Tests/WeztermLocatorTests.swift (stub runner 注入, JSON fixture)
+- Tests/AgentCardMachineTests.swift, Tests/AgentReconcilerTests.swift, Tests/OpenCodeAgentStoreTests.swift
 
 要点:
 
-- CLI 解析梯子: wezterm -> /opt/homebrew/bin/wezterm -> /Applications/WezTerm.app/Contents/MacOS/cli。
+- CLI 解析梯子: wezterm -> /opt/homebrew/bin/wezterm -> /Applications/WezTerm.app/Contents/MacOS/cli -> /Applications/WezTerm.app/Contents/MacOS/wezterm (实测: bundle 内无 cli, brew symlink 才是真实路径)。
 - pane 匹配梯子: cmdline 含 "opencode" 且 cwd == session.directory -> is_active 优先 -> pane_id 最小; 失败退到仅 cwd 匹配; 再失败只激活 WezTerm 应用。
 - 激活顺序: activate-tab -> activate-pane -> NSRunningApplication.activate。
 - cli list 按需调用, 结果缓存 2s。

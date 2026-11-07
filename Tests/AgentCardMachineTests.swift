@@ -13,7 +13,8 @@ private func cardTarget(_ requestID: String = "per_1",
                     requestID: requestID,
                     shortName: shortName,
                     position: position,
-                    total: total)
+                    total: total,
+                    directory: "/Users/x/projects/ribbon")
 }
 
 @Suite(.serialized) final class AgentCardMachineTests {

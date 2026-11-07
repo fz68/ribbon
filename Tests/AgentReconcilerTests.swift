@@ -5,9 +5,10 @@ import Testing
 private let reconcileNow = Date(timeIntervalSince1970: 1_800_000_000)
 
 private func summary(_ id: String,
+                     parentID: String? = nil,
                      directory: String? = nil,
                      title: String? = nil) -> SessionSummary {
-    SessionSummary(id: id, title: title, directory: directory)
+    SessionSummary(id: id, parentID: parentID, title: title, directory: directory)
 }
 
 private func pending(_ id: String, action: String = "bash") -> PendingRequest {
@@ -127,6 +128,22 @@ private func session(_ id: String,
         #expect(sessions.first?.pending.map(\.id) == ["per_old"],
                 "unknown pending preserves what the stream already knew")
         #expect(sessions.first?.shortName == "api", "the name still updates")
+    }
+
+    @Test func testDirectoryIsCarriedFromTheList() {
+        let sessions = AgentReconciler.sessions(
+            activeIDs: ["ses_active_only"],
+            listedSessions: [
+                summary("ses_parent"),
+                summary("ses_child", directory: "/x/api"),
+            ],
+            pendingByID: [:],
+            previous: AgentSessionStore(),
+            now: reconcileNow
+        )
+
+        #expect(sessions.first { $0.id == "ses_child" }?.directory == "/x/api",
+                "the listed directory reaches the built session for jumps")
     }
 
     @Test func testSessionsMissingFromTheListAreKept() {

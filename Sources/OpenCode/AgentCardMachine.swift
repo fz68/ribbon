@@ -14,6 +14,21 @@ struct AgentCardTarget: Equatable {
     let position: Int
     /// Size of the permission queue when the card opened.
     let total: Int
+    /// Absolute directory the session runs in, used by jump-to-pane. Empty means
+    /// unknown (the session had no directory); the jump then degrades to
+    /// app-only.
+    let directory: String
+}
+
+/// Where a chip tap should jump: a session, not a request.
+///
+/// Kept apart from `AgentCardTarget` so a jump can never be mistaken for a
+/// permission the card could answer. An empty `directory` means unknown, and the
+/// jump then degrades to activating WezTerm only.
+struct AgentJumpTarget: Equatable {
+    let sessionID: String
+    let shortName: String
+    let directory: String
 }
 
 /// The approval card's state machine.

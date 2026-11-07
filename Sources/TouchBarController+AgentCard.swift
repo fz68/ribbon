@@ -28,8 +28,9 @@ extension TouchBarController {
             self?.handleAgentChipTap()
         }
         agentCard.onIdentityTap = { [weak self] in
-            // P2 has no jump-to-pane yet, so the identity cell only dismisses.
-            self?.dismissAgentCard(reason: "dismissed")
+            // The identity cell jumps to the pane hosting the locked session,
+            // then closes the card.
+            self?.jumpFromAgentCard()
         }
         agentCard.onDecision = { [weak self] decision in
             self?.decideAgentCard(decision)
@@ -38,13 +39,16 @@ extension TouchBarController {
 
     // MARK: - Opening
 
-    /// First tap: lock the oldest pending permission and show the card.
+    /// First tap: lock the oldest pending permission and show the card; with
+    /// nothing pending, jump to the session that needs attention instead.
     func handleAgentChipTap() {
         guard let snapshot = agentSnapshot, snapshot.visible else { return }
         guard case .closed = agentCardMachine.phase else { return }
-        // With nothing pending the tap will jump to the terminal in P3; for now
-        // it does nothing.
-        guard let target = snapshot.triage.first else { return }
+        guard let target = snapshot.triage.first else {
+            // Nothing to approve: the tap jumps to the most relevant session.
+            if let jump = snapshot.jump { jumpToAgentTarget(jump) }
+            return
+        }
         guard agentCardMachine.open(target: target, now: Date()) else { return }
         log("agent card open \(target.shortName) \(target.position)/\(target.total)")
         renderAgentCard()
@@ -111,6 +115,75 @@ extension TouchBarController {
         if agentCardMachine.raceReplied(requestID: target.requestID) {
             log("agent card race-closed")
             closeAgentCardUI()
+        }
+    }
+
+    // MARK: - Jump
+
+    /// Identity-cell tap: jump to the session the card locked, then close.
+    func jumpFromAgentCard() {
+        guard let target = agentCardMachine.target else { return }
+        performAgentJump(directory: target.directory)
+        dismissAgentCard(reason: "jumped")
+    }
+
+    /// Chip-tap jump target; used when nothing is pending.
+    func jumpToAgentTarget(_ target: AgentJumpTarget) {
+        performAgentJump(directory: target.directory)
+    }
+
+    /// Looks up and activates the WezTerm pane for `directory`.
+    ///
+    /// The CLI spawns block, so lookup and activation run on the jump queue;
+    /// only the app activation and the log line hop to main. The directory is
+    /// never logged: it can contain private project names.
+    private func performAgentJump(directory: String) {
+        agentJumpQueue.async { [weak self] in
+            guard let self else { return }
+            let pane = self.weztermLocator.locatePane(directory: directory)
+            if let pane { self.weztermLocator.activate(pane: pane) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.didShutdown else { return }
+                if let pane {
+                    log("agent jump pane=\(pane.paneID) tab=\(pane.tabID)")
+                } else {
+                    log("agent jump app-only")
+                }
+                Self.activateWezTerm()
+            }
+        }
+    }
+
+    /// Brings WezTerm to the front.
+    ///
+    /// The bundle id is the installed app's. If activation is refused, fall back
+    /// to asking the workspace to open the bundle, which also launches it.
+    private static func activateWezTerm() {
+        let bundleID = "com.github.wez.wezterm"
+        let options: NSApplication.ActivationOptions = [.activateAllWindows]
+        let activated = NSRunningApplication
+            .runningApplications(withBundleIdentifier: bundleID)
+            .first
+            .map { app -> Bool in
+                if #available(macOS 14.0, *) {
+                    // The source-aware variant is the supported call on the OS
+                    // this app runs on; the old one covers the 13.0 floor.
+                    return app.activate(from: .current, options: options)
+                }
+                return app.activate(options: options)
+            } ?? false
+        guard !activated else { return }
+
+        log("agent jump activation refused")
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+            log("agent jump wezterm app not found")
+            return
+        }
+        NSWorkspace.shared.openApplication(at: url,
+                                           configuration: NSWorkspace.OpenConfiguration()) { _, error in
+            if let error {
+                log("agent jump open failed: \(error.localizedDescription)")
+            }
         }
     }
 

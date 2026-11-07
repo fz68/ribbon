@@ -33,6 +33,11 @@ struct AgentSession: Equatable {
     /// The main session that owns this subagent session; nil for a top-level
     /// session. Filled from the session list and from `session.created` events.
     var parentID: String? = nil
+    /// Absolute directory the session runs in, used by jump-to-pane. nil until a
+    /// list page or a created event provides it.
+    var directory: String? = nil
+    /// Session title. The last-resort jump label when no directory is known.
+    var title: String? = nil
 }
 
 /// What the chip should draw.
@@ -76,6 +81,13 @@ struct AgentSessionStore {
             // a parent learned earlier (from the event or a reconcile).
             if let parentID = event.parentID {
                 sessions[id]?.parentID = parentID
+            }
+            // Same rule for the jump metadata: only fill, never erase.
+            if let directory = event.directory {
+                sessions[id]?.directory = directory
+            }
+            if let title = event.title {
+                sessions[id]?.title = title
             }
         case "session.deleted":
             guard let id = event.sessionID else { return }
@@ -139,6 +151,11 @@ struct AgentSessionStore {
     ///   non-empty array still replaces, and a session absent from the snapshot
     ///   is dropped with its requests.
     ///
+    /// `lastSeen` keeps the value already on record for a known session: a
+    /// reconcile is not activity, and preserving the arrival order keeps the
+    /// "newest busy" jump target stable across reconnects. Only a session seen
+    /// for the first time is stamped `now`.
+    ///
     /// `doneUntil` is cleared either way: a resync is not a busy-to-idle
     /// transition.
     mutating func replaceAll(sessions newSessions: [AgentSession],
@@ -146,7 +163,10 @@ struct AgentSessionStore {
                              pendingIsAuthoritative: Bool) {
         var fresh: [String: AgentSession] = [:]
         for var session in newSessions {
-            session.lastSeen = now
+            // A reconcile is not activity: keep the arrival time already on
+            // record so "newest busy" does not collapse to the lowest id after
+            // every reconnect. A session seen for the first time is stamped now.
+            session.lastSeen = sessions[session.id]?.lastSeen ?? now
             if session.shortName.isEmpty { session.shortName = "?" }
             if !pendingIsAuthoritative, session.pending.isEmpty,
                let existing = sessions[session.id], !existing.pending.isEmpty {
@@ -233,8 +253,30 @@ struct AgentSessionStore {
                             requestID: entry.request.id,
                             shortName: entry.session.shortName,
                             position: index + 1,
-                            total: total)
+                            total: total,
+                            directory: entry.session.directory ?? "")
         }
+    }
+
+    /// The session a chip tap jumps to when nothing is pending.
+    ///
+    /// The most recently touched busy session wins; when nothing is busy, the
+    /// most recently touched session. The card path carries its own locked
+    /// target, so this is only consulted with an empty permission triage and the
+    /// result has no request attached. Equal `lastSeen` values (one event batch)
+    /// go to the lower session id so the answer is deterministic.
+    var jumpTarget: AgentJumpTarget? {
+        let busy = sessions.values.filter(\.isBusy)
+        let candidates = busy.isEmpty ? Array(sessions.values) : busy
+        guard let session = candidates.max(by: { lhs, rhs in
+            if lhs.lastSeen != rhs.lastSeen { return lhs.lastSeen < rhs.lastSeen }
+            return lhs.id > rhs.id
+        }) else {
+            return nil
+        }
+        return AgentJumpTarget(sessionID: session.id,
+                               shortName: session.shortName,
+                               directory: session.directory ?? "")
     }
 
     // MARK: - Helpers
@@ -270,6 +312,15 @@ struct AgentSessionStore {
 
     private mutating func ensureSession(id: String, directory: String?, now: Date) {
         if var session = sessions[id] {
+            if let directory {
+                session.directory = directory
+                // A placeholder name learned before the directory arrived is
+                // replaced now that the basename is known.
+                if session.shortName == "?" || session.shortName.isEmpty,
+                   let name = Self.shortName(directory: directory) {
+                    session.shortName = name
+                }
+            }
             session.lastSeen = now
             sessions[id] = session
             return
@@ -278,7 +329,8 @@ struct AgentSessionStore {
                                     shortName: Self.shortName(directory: directory) ?? "?",
                                     isBusy: false,
                                     pending: [],
-                                    lastSeen: now)
+                                    lastSeen: now,
+                                    directory: directory)
     }
 
     private mutating func addPending(_ request: PendingRequest, to id: String, now: Date) {

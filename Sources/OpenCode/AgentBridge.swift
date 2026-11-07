@@ -10,6 +10,11 @@ struct AgentSnapshot: Equatable {
     let visible: Bool
     /// Permission requests only, oldest first, with 1-based positions.
     let triage: [AgentCardTarget]
+    /// Where a chip tap jumps when nothing is pending: the most recently touched
+    /// busy session, else the most recently touched session. nil only when the
+    /// store has no sessions. The card path supplies its own locked target, so
+    /// this never carries a permission request.
+    let jump: AgentJumpTarget?
 }
 
 /// Owns the opencode connection for the agent chip.
@@ -123,7 +128,7 @@ final class AgentBridge: @unchecked Sendable {
             self.lastContact = nil
             self.store = AgentSessionStore()
             self.reconcileGeneration += 1
-            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: []))
+            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: [], jump: nil))
         }
     }
 
@@ -302,7 +307,8 @@ final class AgentBridge: @unchecked Sendable {
             visible: AgentBridgeHealth.visible(endpoint: endpoint != nil,
                                                lastContact: lastContact,
                                                now: now),
-            triage: store.triageList
+            triage: store.triageList,
+            jump: store.jumpTarget
         )
         onUpdate?(snapshot)
     }

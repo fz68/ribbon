@@ -290,6 +290,73 @@ private func at(_ seconds: TimeInterval) -> Date {
         #expect(store.triageCount == 3, "and the request count")
     }
 
+    @Test func testJumpTargetPrefersBusyThenRecent() throws {
+        // The newest busy session wins; an even newer idle session does not.
+        var busyStore = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/old",
+                  to: &busyStore, data: ["sessionID": "ses_old"])
+        try apply("session.status", at: 1, to: &busyStore,
+                  data: ["sessionID": "ses_old", "status": ["type": "busy"]])
+        try apply("session.created", at: 2, directory: "/x/new",
+                  to: &busyStore, data: ["sessionID": "ses_new"])
+        try apply("session.status", at: 2, to: &busyStore,
+                  data: ["sessionID": "ses_new", "status": ["type": "busy"]])
+        try apply("session.created", at: 3, directory: "/x/idle",
+                  to: &busyStore, data: ["sessionID": "ses_idle"])
+
+        #expect(busyStore.jumpTarget?.sessionID == "ses_new",
+                "the most recently touched busy session wins over older busy ones")
+        #expect(busyStore.jumpTarget?.directory == "/x/new",
+                "the jump carries the session directory")
+        #expect(busyStore.jumpTarget?.shortName == "new",
+                "the jump carries the display name, not a request")
+
+        // With nothing busy, the most recently touched session wins.
+        var idleStore = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/a",
+                  to: &idleStore, data: ["sessionID": "ses_a"])
+        try apply("session.created", at: 2, directory: "/x/b",
+                  to: &idleStore, data: ["sessionID": "ses_b"])
+        #expect(idleStore.jumpTarget?.sessionID == "ses_b",
+                "the newest session wins when nothing is busy")
+        #expect(idleStore.jumpTarget?.directory == "/x/b")
+
+        #expect(AgentSessionStore().jumpTarget == nil, "an empty store has nowhere to jump")
+    }
+
+    @Test func testReplaceAllKeepsLastSeenForKnownSessions() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/a",
+                  to: &store, data: ["sessionID": "ses_a"])
+        try apply("session.status", at: 1, to: &store,
+                  data: ["sessionID": "ses_a", "status": ["type": "busy"]])
+        try apply("session.created", at: 2, directory: "/x/z",
+                  to: &store, data: ["sessionID": "ses_z"])
+        try apply("session.status", at: 2, to: &store,
+                  data: ["sessionID": "ses_z", "status": ["type": "busy"]])
+        #expect(store.jumpTarget?.sessionID == "ses_z")
+
+        // A reconcile claims both as seen now ("distantPast" inputs). The store
+        // must keep the arrival order it already knew, or the lastSeen tie would
+        // fall back to the lowest id.
+        store.replaceAll(sessions: [
+            AgentSession(id: "ses_a", shortName: "a", isBusy: true, pending: [],
+                         lastSeen: .distantPast),
+            AgentSession(id: "ses_z", shortName: "z", isBusy: true, pending: [],
+                         lastSeen: .distantPast),
+        ], now: at(10), pendingIsAuthoritative: true)
+        #expect(store.jumpTarget?.sessionID == "ses_z",
+                "the newest busy session survives a reconcile")
+    }
+
+    @Test func testJumpTargetDirectoryIsEmptyWhenUnknown() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, to: &store,
+                  data: ["sessionID": "ses_1", "title": "ribbon card test"])
+        #expect(store.jumpTarget?.directory == "",
+                "a title never stands in for a directory; unknown stays empty")
+    }
+
     @Test func testDeletedSessionDropsItsPendingRequests() throws {
         var store = AgentSessionStore()
         try apply("session.created", to: &store, data: ["sessionID": "ses_1"])
@@ -390,9 +457,13 @@ private func at(_ seconds: TimeInterval) -> Date {
 
     private func apply(_ type: String,
                        at seconds: TimeInterval,
+                       directory: String? = nil,
                        to store: inout AgentSessionStore,
                        data: [String: Any]) throws {
-        let event = try #require(makeEvent(type, ms: 1_700_000_000_000 + seconds * 1000, data: data))
+        let event = try #require(makeEvent(type,
+                                           ms: 1_700_000_000_000 + seconds * 1000,
+                                           directory: directory,
+                                           data: data))
         store.apply(event, now: at(seconds))
     }
 

@@ -42,7 +42,10 @@ enum AgentReconciler {
         return ids.sorted().map { id in
             let summary = listed[id]
             let prior = previous.sessions[id]
-            let shortName = AgentSessionStore.shortName(directory: summary?.directory)
+            // The merged directory, not the page alone: a page that omits the
+            // location must not lose a name the bridge already knew.
+            let directory = summary?.directory ?? prior?.directory
+            let shortName = AgentSessionStore.shortName(directory: directory)
                 ?? prior?.shortName
                 ?? "?"
             let pending: [PendingRequest]
@@ -60,7 +63,9 @@ enum AgentReconciler {
                                 // kept because it is active or pending but
                                 // missing from the page has no known parent and
                                 // therefore forms its own group.
-                                parentID: summary?.parentID)
+                                parentID: summary?.parentID,
+                                directory: directory,
+                                title: summary?.title ?? prior?.title)
         }
     }
 }

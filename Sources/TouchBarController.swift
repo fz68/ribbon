@@ -66,6 +66,10 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// The last published bridge snapshot: the chip tap and the replied race
     /// both read the queue from it.
     var agentSnapshot: AgentSnapshot?
+    /// WezTerm CLI lookup for jump-to-pane; its pane list is cached between taps.
+    let weztermLocator = WeztermLocator()
+    /// Serial background queue for the blocking CLI spawns of a jump.
+    let agentJumpQueue = DispatchQueue(label: "local.ribbon.agent-jump")
     let timeLabel = NSTextField(labelWithString: "")
     let volumeQueue = DispatchQueue(label: "local.ribbon.volume")
     /// Refreshes the clock. Formatting only, so it never spawns a process.

@@ -28,8 +28,10 @@ import Testing
         #expect(visual.visible == true, "busy keeps the slot")
         #expect(visual.text == "3", "busy shows the session count")
         #expect(visual.fill == Theme.controlBackground, "busy does not flood the fill")
-        #expect(visual.border == Theme.agentBusyBorder, "busy uses the teal border")
+        #expect(visual.border == Theme.agentBusyBorder, "busy uses the cyan border")
         #expect(visual.textColor == Theme.agentBusyBorder, "busy text matches the border")
+        #expect(visual.border != AgentChipVisual.visual(for: .done).fill,
+                "busy must not read as the done green")
         #expect(visual.hairline == true, "busy draws the progress hairline")
         #expect(visual.pulses == false, "busy does not pulse")
         #expect(visual.showsDot == false, "busy hides the idle dot")

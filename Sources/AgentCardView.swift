@@ -30,7 +30,7 @@ final class AgentCardView: NSView {
     /// right edge, so it never changes the bar's layout outside its own frame.
     static let width = Theme.Layout.chipWidth * 4
 
-    /// Tapped the identity cell (dismiss in P2; jump in P3).
+    /// Tapped the identity cell (jump).
     var onIdentityTap: (() -> Void)?
     /// Tapped one of the three decision cells.
     var onDecision: ((AgentDecision) -> Void)?
