@@ -68,6 +68,11 @@ final class AgentBridge: @unchecked Sendable {
     /// events hid a healthy chip after a minute without one.
     private var lastContact: Date?
     private var healthTimer: DispatchSourceTimer?
+    /// Polls the authoritative running set; see `pollActiveSessions`.
+    private var activePollTimer: DispatchSourceTimer?
+    private var activePollInFlight = false
+    private let pollLogLock = NSLock()
+    private var lastPollErrorLog = Date.distantPast
     /// Makes a slow reconcile unable to overwrite a newer one, and a reconcile
     /// for an old endpoint unable to touch the store at all.
     private var reconcileGeneration = 0
@@ -104,6 +109,7 @@ final class AgentBridge: @unchecked Sendable {
 
     deinit {
         healthTimer?.cancel()
+        activePollTimer?.cancel()
     }
 
     /// Starts watching the service and the health clock.
@@ -115,6 +121,7 @@ final class AgentBridge: @unchecked Sendable {
             guard let self, !self.running else { return }
             self.running = true
             self.startHealthTimer()
+            self.startActivePollTimer()
             self.locator.start()
             self.publish()
         }
@@ -128,6 +135,9 @@ final class AgentBridge: @unchecked Sendable {
             self.running = false
             self.healthTimer?.cancel()
             self.healthTimer = nil
+            self.activePollTimer?.cancel()
+            self.activePollTimer = nil
+            self.activePollInFlight = false
             self.stream.stop()
             self.locator.stop()
             self.endpoint = nil
@@ -325,6 +335,58 @@ final class AgentBridge: @unchecked Sendable {
         }
         timer.resume()
         healthTimer = timer
+    }
+
+    /// Polls the service's running set.
+    ///
+    /// On 2.2.x this is the only busy signal: a session that starts generating
+    /// after the last resync never emits a status event, so an event-only chip
+    /// would stay idle forever. A failed poll leaves the store untouched (a
+    /// stale busy flag beats a false idle) and is logged at most once a minute;
+    /// overlapping polls are skipped. The poll lives and dies with the bridge.
+    private func startActivePollTimer() {
+        activePollTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Theme.Timing.agentActivePoll,
+                       repeating: Theme.Timing.agentActivePoll)
+        timer.setEventHandler { [weak self] in
+            self?.pollActiveSessions()
+        }
+        timer.resume()
+        activePollTimer = timer
+    }
+
+    private func pollActiveSessions() {
+        guard running, !activePollInFlight, let client = self.client else { return }
+        activePollInFlight = true
+        let queue = self.queue
+        Task {
+            let ids = try? await client.activeSessionIDs()
+            queue.async { [weak self] in
+                guard let self else { return }
+                self.activePollInFlight = false
+                guard self.running else { return }
+                guard let ids else {
+                    self.logPollFailure()
+                    return
+                }
+                self.store.applyActivePoll(ids, now: self.now())
+                self.publish()
+            }
+        }
+    }
+
+    /// One failure line per minute, like the other throttled subprocess logs.
+    private func logPollFailure() {
+        pollLogLock.lock()
+        let now = Date()
+        guard now.timeIntervalSince(lastPollErrorLog) >= 60 else {
+            pollLogLock.unlock()
+            return
+        }
+        lastPollErrorLog = now
+        pollLogLock.unlock()
+        log("agent active poll failed; keeping the last busy state")
     }
 
     private func publish() {

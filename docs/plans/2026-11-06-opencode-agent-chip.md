@@ -47,6 +47,8 @@ Touch Bar 上增加一个 56pt 的 agent chip, 实时显示本机 opencode 后�
 | 会话状态 | Session.Info 无 status 字段; 迁移经 session.status 事件 (data.status.type = idle/busy/retry) |
 | V1 插件 | V1 实现在 V2 不运行 (migrate-v1 明示), 故 Openbar 的插件不可抄; 且 Openbar 为 GPL-3.0, ribbon 为 MIT, 代码不可搬 |
 | 布局常量 | fullWidth 1004, containerHeight 30, controlSize 24, chipWidth 56, chipMinWidth 40, clusterGap 8, appLabelMaxWidth 160, appLabelTrailingPriority 999; 右 cluster 约 225pt (以 dumpLayout 实测为准) |
+| 2.2.6 观察 | session.status 在生成期间不再发出 (45s 生成窗口 0 帧); busy 改为每 3s 轮询 GET /api/session/active 的 type=="running", session.status 事件仅作加速信号 |
+| service 重启实测 | 06:04:36 unavailable -> 06:04:37 重发现 version=2.2.6 新 pid -> chip 恢复, 1s |
 
 ## 4. 待验证假设 (spike 已完成, 2026-11-06)
 
@@ -352,7 +354,7 @@ struct AgentSessionStore {
 | SSE 心跳为 `: heartbeat` 注释行, 周期性确认: 心跳使连接长期保持, 故健康判定必须把任意活动(含心跳)计为 contact (2026-11-06 实机日志证实) | 任意行重置 60s 空闲计时, 超时重连 + 全量对账 |
 | 事件流含 session.text.delta 等高频帧 | 字节级预过滤, 未命中订阅类型不解码 |
 | service 重启换 url/password | ServiceLocator watch 父目录应对原子替换, 端点变更即重建 EventStream |
-| openapi 字段随版本漂移 | 解码容忍缺字段 (短名退 "?", metadata 只取已知键); 启动时 /api/info 的 version 写一条日志 |
+| openapi 字段随版本漂移 | 解码容忍缺字段 (短名退 "?", metadata 只取已知键); 启动时 /api/info 的 version 写一条日志; busy 判定轮询 /api/session/active, 不依赖 session.status 事件 |
 | service.json 含明文密码 | 只读, 不复制, 不进日志与诊断输出; dumpLayout 类日志评审时确认 |
 | 多会话同 cwd 导致跳转歧义 | 可接受: 最坏跳到同仓库另一 pane, 决策与跳转已解耦 |
 | Touch Bar 误触 | 开卡 + 点格两次确认; 卡锁定 requestID; 5s 超时 |

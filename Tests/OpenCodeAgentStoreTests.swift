@@ -443,6 +443,66 @@ private func at(_ seconds: TimeInterval) -> Date {
                 "a title never stands in for a directory; unknown stays empty")
     }
 
+    @Test func testActiveSessionsSetBusyForKnownSessionsOnly() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/a",
+                  to: &store, data: ["sessionID": "ses_a"])
+        try apply("session.created", at: 2, directory: "/x/b",
+                  to: &store, data: ["sessionID": "ses_b"])
+        // The event path says busy; the poll is authoritative from here on.
+        try apply("session.status", at: 2, to: &store,
+                  data: ["sessionID": "ses_b", "status": ["type": "busy"]])
+        try apply("permission.asked", at: 3, to: &store,
+                  data: ["sessionID": "ses_a", "id": "per_1", "action": "bash"])
+
+        store.applyActiveSessions(["ses_b"], now: at(10))
+        #expect(store.sessions["ses_b"]?.isBusy == true, "a running known session is busy")
+        #expect(store.sessions["ses_a"]?.isBusy == false, "an absent known session is idle")
+        #expect(store.sessions["ses_b"]?.lastSeen == at(2),
+                "polling is not activity; arrival times stay put")
+        #expect(store.triageCount == 1, "pending requests survive the poll")
+
+        // An unknown running id must not become a phantom jump candidate.
+        store.applyActiveSessions(["ses_b", "ses_unknown"], now: at(11))
+        #expect(store.sessions["ses_unknown"] == nil, "unknown ids are ignored")
+        #expect(store.sessions.count == 2)
+
+        store.applyActiveSessions([], now: at(12))
+        #expect(store.sessions["ses_b"]?.isBusy == false, "an empty set clears busy")
+        #expect(store.chip(now: at(12)) == .awaiting(count: 1),
+                "the pending request still drives the chip")
+    }
+
+    @Test func testJumpTargetPrefersABusySessionWithADirectory() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/known",
+                  to: &store, data: ["sessionID": "ses_known"])
+        try apply("session.created", at: 2, to: &store,
+                  data: ["sessionID": "ses_nodir"])
+        store.applyActiveSessions(["ses_known", "ses_nodir"], now: at(3))
+
+        // ses_nodir is newer, but a jump needs a directory to locate a pane.
+        #expect(store.jumpTarget?.sessionID == "ses_known",
+                "the newest busy session WITH a directory wins")
+
+        store.applyActiveSessions(["ses_nodir"], now: at(4))
+        #expect(store.jumpTarget?.sessionID == "ses_nodir",
+                "with no locatable busy session, the newest busy is the fallback")
+    }
+
+    @Test func testFailedActivePollChangesNothing() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/a",
+                  to: &store, data: ["sessionID": "ses_a"])
+        store.applyActiveSessions(["ses_a"], now: at(2))
+        #expect(store.chip(now: at(2)) == .busy(count: 1))
+
+        store.applyActivePoll(nil, now: at(3))
+        #expect(store.sessions["ses_a"]?.isBusy == true,
+                "a failed poll keeps the last busy state")
+        #expect(store.chip(now: at(3)) == .busy(count: 1))
+    }
+
     @Test func testDeletedSessionDropsItsPendingRequests() throws {
         var store = AgentSessionStore()
         try apply("session.created", to: &store, data: ["sessionID": "ses_1"])

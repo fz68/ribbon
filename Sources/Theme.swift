@@ -156,5 +156,9 @@ enum Theme {
         /// Hold time for the agent-chip interrupt gesture (nothing to approve).
         /// Longer because it is a single-gesture destructive action.
         static let agentInterruptHold: TimeInterval = 1.2
+        /// How often the bridge polls the service's running-session set.
+        /// opencode 2.2.x no longer reports generation through events, so this
+        /// poll is the busy signal.
+        static let agentActivePoll: TimeInterval = 3
     }
 }

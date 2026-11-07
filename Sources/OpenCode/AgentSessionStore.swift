@@ -94,6 +94,8 @@ struct AgentSessionStore {
             // Deleting the session drops its pending requests with it; the chip
             // must not keep asking about something that no longer exists.
             sessions.removeValue(forKey: id)
+        // Accelerator only: 2.2.x no longer emits this while generating, and
+        // the periodic active-session poll above overrides whatever it says.
         case "session.status":
             guard let id = event.sessionID else { return }
             switch event.statusType {
@@ -186,6 +188,32 @@ struct AgentSessionStore {
         }
         sessions = fresh
         doneUntil = nil
+    }
+
+    /// Applies the service's authoritative running set to the known sessions.
+    ///
+    /// opencode 2.2.x stopped emitting `session.status` while a session
+    /// generates, so this polled set is what actually keeps `isBusy` truthful;
+    /// the event path below is only an accelerator on versions that still emit
+    /// it. Unknown ids are ignored on purpose: a session that was never listed
+    /// has no name or directory, so inventing it would put a phantom in the
+    /// jump tiers.
+    ///
+    /// `now` is part of the shared entry-point shape; polling is not session
+    /// activity, so arrival times are deliberately left alone (stamping them
+    /// would reshuffle the jump tiers every few seconds).
+    mutating func applyActiveSessions(_ ids: Set<String>, now: Date) {
+        for id in Array(sessions.keys) {
+            sessions[id]?.isBusy = ids.contains(id)
+        }
+    }
+
+    /// Applies one poll result. A nil result is a failed poll and changes
+    /// nothing: a stale busy flag is better than a false idle, and the next
+    /// successful poll corrects it.
+    mutating func applyActivePoll(_ ids: Set<String>?, now: Date) {
+        guard let ids else { return }
+        applyActiveSessions(ids, now: now)
     }
 
     // MARK: - Chip state
@@ -281,7 +309,11 @@ struct AgentSessionStore {
         let pending = sessions.values.filter { !$0.pending.isEmpty }
         let candidates: [AgentSession]
         if !busy.isEmpty {
-            candidates = Array(busy)
+            // A jump needs a directory to locate a WezTerm pane. Prefer a busy
+            // session that has one; only fall back to the newest busy session
+            // (which then jumps app-only) when none does.
+            let locatable = busy.filter { !($0.directory ?? "").isEmpty }
+            candidates = locatable.isEmpty ? busy : locatable
         } else if !pending.isEmpty {
             candidates = Array(pending)
         } else {

@@ -49,9 +49,11 @@ A 2 pt line along the very bottom edge shows the selected input source.
 
 ### Agent chip
 
-The 56 pt chip left of the right cluster mirrors the local opencode 2.1.x background service. Ribbon
-finds it through `~/.local/state/opencode/service.json`; nothing has to be installed besides
-opencode itself, and the chip asks for no macOS permissions.
+The 56 pt chip left of the right cluster mirrors the local opencode 2.1.x/2.2.x background service.
+Ribbon finds it through `~/.local/state/opencode/service.json`; nothing has to be installed besides
+opencode itself, and the chip asks for no macOS permissions. The busy count follows the service's
+own running-session set, polled every few seconds, because opencode 2.2.x stopped emitting
+per-execution status events.
 
 - Dim hollow dot: no session is running. Cyan border and a session-group count: sessions are busy
   (a subagent counts once, with the session that started it). Amber `!N`: a permission or form is
