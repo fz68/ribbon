@@ -2,25 +2,6 @@ import Foundation
 import Testing
 @testable import RibbonCore
 
-/// A thread safe holder for the result the detached completion delivers on the
-/// worker queue.
-private final class DetachedResultBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: ProcessResult?
-
-    var result: ProcessResult? {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
-    }
-
-    func store(_ value: ProcessResult) {
-        lock.lock()
-        stored = value
-        lock.unlock()
-    }
-}
-
 @Suite(.serialized) final class ProcessRunnerTests {
     init() { _ = TestBootstrap.tempRoot }
 
@@ -81,14 +62,14 @@ private final class DetachedResultBox: @unchecked Sendable {
     }
 
     @Test func testRunDetachedCompletes() {
-        let box = DetachedResultBox()
+        let box = Box<ProcessResult>()
         ProcessRunner.runDetached("/bin/echo", ["hi"]) { result in
             box.store(result)
         }
 
-        #expect(waitUntil { box.result != nil },
+        #expect(waitUntil { box.value != nil },
                 "the detached completion runs within the wait window")
-        guard let result = box.result else {
+        guard let result = box.value else {
             #expect(Bool(false), "the detached completion delivered a result")
             return
         }

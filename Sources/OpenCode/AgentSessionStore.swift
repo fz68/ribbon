@@ -257,11 +257,7 @@ struct AgentSessionStore {
     /// Unknown ids are ignored on purpose: a session that was never listed
     /// has no name or directory, so inventing it would put a phantom in the
     /// jump tiers.
-    ///
-    /// `now` is part of the shared entry-point shape; polling is not session
-    /// activity, so arrival times are deliberately left alone (stamping them
-    /// would reshuffle the jump tiers every few seconds).
-    mutating func applyActiveSessions(_ ids: Set<String>, now: Date) {
+    mutating func applyActiveSessions(_ ids: Set<String>) {
         for id in Array(sessions.keys) {
             sessions[id]?.isBusy = ids.contains(id)
         }
@@ -270,9 +266,9 @@ struct AgentSessionStore {
     /// Applies one poll result. A nil result is a failed poll and changes
     /// nothing: a stale busy flag is better than a false idle, and the next
     /// successful poll corrects it.
-    mutating func applyActivePoll(_ ids: Set<String>?, now: Date) {
+    mutating func applyActivePoll(_ ids: Set<String>?) {
         guard let ids else { return }
-        applyActiveSessions(ids, now: now)
+        applyActiveSessions(ids)
     }
 
     // MARK: - Chip state

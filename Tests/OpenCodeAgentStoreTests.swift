@@ -674,7 +674,7 @@ private func at(_ seconds: TimeInterval) -> Date {
         try apply("permission.asked", at: 3, to: &store,
                   data: ["sessionID": "ses_a", "id": "per_1", "action": "bash"])
 
-        store.applyActiveSessions(["ses_b"], now: at(10))
+        store.applyActiveSessions(["ses_b"])
         #expect(store.sessions["ses_b"]?.isBusy == true, "a running known session is busy")
         #expect(store.sessions["ses_a"]?.isBusy == false, "an absent known session is idle")
         #expect(store.sessions["ses_b"]?.lastSeen == at(2),
@@ -682,11 +682,11 @@ private func at(_ seconds: TimeInterval) -> Date {
         #expect(store.triageCount == 1, "pending requests survive the poll")
 
         // An unknown running id must not become a phantom jump candidate.
-        store.applyActiveSessions(["ses_b", "ses_unknown"], now: at(11))
+        store.applyActiveSessions(["ses_b", "ses_unknown"])
         #expect(store.sessions["ses_unknown"] == nil, "unknown ids are ignored")
         #expect(store.sessions.count == 2)
 
-        store.applyActiveSessions([], now: at(12))
+        store.applyActiveSessions([])
         #expect(store.sessions["ses_b"]?.isBusy == false, "an empty set clears busy")
         #expect(store.chip(now: at(12)) == .awaiting(count: 1),
                 "the pending request still drives the chip")
@@ -698,13 +698,13 @@ private func at(_ seconds: TimeInterval) -> Date {
                   to: &store, data: ["sessionID": "ses_known"])
         try apply("session.created", at: 2, to: &store,
                   data: ["sessionID": "ses_nodir"])
-        store.applyActiveSessions(["ses_known", "ses_nodir"], now: at(3))
+        store.applyActiveSessions(["ses_known", "ses_nodir"])
 
         // ses_nodir is newer, but a jump needs a directory to locate a pane.
         #expect(store.jumpTarget?.sessionID == "ses_known",
                 "the newest busy session WITH a directory wins")
 
-        store.applyActiveSessions(["ses_nodir"], now: at(4))
+        store.applyActiveSessions(["ses_nodir"])
         #expect(store.jumpTarget?.sessionID == "ses_nodir",
                 "with no locatable busy session, the newest busy is the fallback")
     }
@@ -713,10 +713,10 @@ private func at(_ seconds: TimeInterval) -> Date {
         var store = AgentSessionStore()
         try apply("session.created", at: 1, directory: "/x/a",
                   to: &store, data: ["sessionID": "ses_a"])
-        store.applyActiveSessions(["ses_a"], now: at(2))
+        store.applyActiveSessions(["ses_a"])
         #expect(store.chip(now: at(2)) == .busy(count: 1))
 
-        store.applyActivePoll(nil, now: at(3))
+        store.applyActivePoll(nil)
         #expect(store.sessions["ses_a"]?.isBusy == true,
                 "a failed poll keeps the last busy state")
         #expect(store.chip(now: at(3)) == .busy(count: 1))

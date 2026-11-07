@@ -2,31 +2,6 @@ import Foundation
 import Testing
 @testable import RibbonCore
 
-/// A thread safe holder for the flag the main queue completion delivers.
-private final class CompletionBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Bool?
-
-    var value: Bool? {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
-    }
-
-    func store(_ flag: Bool) {
-        lock.lock()
-        stored = flag
-        lock.unlock()
-    }
-}
-
-/// Writes an executable shell script at `path`, reporting whether it was written.
-private func writeStub(_ body: String, to path: String) -> Bool {
-    FileManager.default.createFile(atPath: path,
-                                   contents: Data(("#!/bin/sh\n" + body).utf8),
-                                   attributes: [.posixPermissions: 0o755])
-}
-
 @Suite(.serialized) final class ParsingTests {
     init() { _ = TestBootstrap.tempRoot }
 
@@ -147,14 +122,14 @@ private func writeStub(_ body: String, to path: String) -> Bool {
 
         AeroSpace.binaryOverride = okStub
         defer { AeroSpace.binaryOverride = nil }
-        let okBox = CompletionBox()
+        let okBox = Box<Bool>()
         AeroSpace.focus("1") { okBox.store($0) }
         #expect(waitUntil { okBox.value != nil },
                 "the completion runs within the wait window")
         #expect(okBox.value == true, "a zero exit reports success")
 
         AeroSpace.binaryOverride = failStub
-        let failBox = CompletionBox()
+        let failBox = Box<Bool>()
         AeroSpace.focus("1") { failBox.store($0) }
         #expect(waitUntil { failBox.value != nil },
                 "the completion runs within the wait window")

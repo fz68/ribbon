@@ -7,7 +7,35 @@ enum AeroSpace {
 
     static let queue = DispatchQueue(label: "local.ribbon.aerospace")
     static let reapQueue = DispatchQueue(label: "local.ribbon.aerospace.reap", qos: .utility)
-    static let errorLog = ThrottledLogger()
+    private static let errorLog = ThrottledLogger()
+
+    private static let monitor = WorkspaceMonitor(label: "aerospace",
+                                                  subscribeLabel: "aerospace",
+                                                  subscribeArguments: [
+                                                      "subscribe",
+                                                      "focused-workspace-changed",
+                                                      "window-detected",
+                                                      "focused-monitor-changed",
+                                                      "focus-changed",
+                                                  ],
+                                                  validatesJSON: true,
+                                                  hasIPC: { hasSubscribe },
+                                                  binary: { binary },
+                                                  queue: queue,
+                                                  reapQueue: reapQueue,
+                                                  log: errorLog)
+
+    static func startMonitoring(onChange: @escaping () -> Void) {
+        monitor.start(onChange: onChange)
+    }
+
+    static func restartMonitoring() {
+        monitor.restart()
+    }
+
+    static func stopMonitoring() {
+        monitor.stop()
+    }
 
     /// Test hook: when non-nil, used instead of the discovered binary.
     static var binaryOverride: String?

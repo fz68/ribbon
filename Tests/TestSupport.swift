@@ -57,3 +57,41 @@ func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) -> Bool {
     }
     return condition()
 }
+
+/// A lock-guarded holder for the one value a background delivery writes.
+final class Box<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value?
+
+    init(_ value: Value? = nil) { stored = value }
+
+    /// Records the delivered value.
+    func store(_ value: Value) {
+        lock.lock()
+        stored = value
+        lock.unlock()
+    }
+
+    /// The delivered value, or nil while nothing has arrived.
+    var value: Value? {
+        lock.lock()
+        defer { lock.unlock() }
+        return stored
+    }
+}
+
+extension Box where Value == Int {
+    /// Adds one to the stored count, starting from zero when nothing was stored.
+    func bump() {
+        store((value ?? 0) + 1)
+    }
+}
+
+/// Writes an executable `#!/bin/sh` script at `path`, replacing any earlier file.
+@discardableResult
+func writeStub(_ body: String, to path: String) -> Bool {
+    try? FileManager.default.removeItem(atPath: path)
+    return FileManager.default.createFile(atPath: path,
+                                          contents: Data(("#!/bin/sh\n" + body).utf8),
+                                          attributes: [.posixPermissions: 0o755])
+}

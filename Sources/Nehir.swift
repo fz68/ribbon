@@ -14,7 +14,34 @@ enum Nehir {
 
     static let queue = DispatchQueue(label: "local.ribbon.nehir")
     static let reapQueue = DispatchQueue(label: "local.ribbon.nehir.reap", qos: .utility)
-    static let errorLog = ThrottledLogger()
+    private static let errorLog = ThrottledLogger()
+
+    private static let monitor = WorkspaceMonitor(label: "nehirctl",
+                                                  subscribeLabel: "nehir",
+                                                  subscribeArguments: [
+                                                      "subscribe",
+                                                      "workspace-bar,windows-changed",
+                                                      "--no-send-initial",
+                                                  ],
+                                                  validatesJSON: false,
+                                                  hasIPC: { hasIPC },
+                                                  binary: { binary },
+                                                  queue: queue,
+                                                  reapQueue: reapQueue,
+                                                  log: errorLog)
+
+    static func startMonitoring(onChange: @escaping () -> Void) {
+        monitor.start(onChange: onChange)
+    }
+
+    static func restartMonitoring() {
+        monitor.restart()
+    }
+
+    static func stopMonitoring() {
+        monitor.stop()
+    }
+
     private static let focusMapLock = NSLock()
 
     /// Chip labels are Nehir display names, but `focus-name` reads numeric

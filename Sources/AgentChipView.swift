@@ -18,8 +18,6 @@ struct AgentChipVisual: Equatable {
     let pulses: Bool
     /// Two-point bar along the bottom edge that sweeps with progress.
     let hairline: Bool
-    /// False collapses the chip to zero width.
-    let visible: Bool
 
     static func visual(for state: AgentChipState) -> AgentChipVisual {
         switch state {
@@ -30,8 +28,7 @@ struct AgentChipVisual: Equatable {
                                    text: "",
                                    showsDot: false,
                                    pulses: false,
-                                   hairline: false,
-                                   visible: false)
+                                   hairline: false)
         case .idle:
             // A hollow dot and a dim outline: present, but nothing to report.
             return AgentChipVisual(fill: Theme.controlBackground,
@@ -40,8 +37,7 @@ struct AgentChipVisual: Equatable {
                                    text: "",
                                    showsDot: true,
                                    pulses: false,
-                                   hairline: false,
-                                   visible: true)
+                                   hairline: false)
         case .busy(let count):
             // The count uses the border colour, the way a workspace chip's
             // number uses its own border.
@@ -51,8 +47,7 @@ struct AgentChipVisual: Equatable {
                                    text: "\(count)",
                                    showsDot: false,
                                    pulses: false,
-                                   hairline: true,
-                                   visible: true)
+                                   hairline: true)
         case .awaiting(let count):
             // Amber is light, so the dark focused-chip text stays legible.
             return AgentChipVisual(fill: Theme.agentWaitFill,
@@ -61,8 +56,7 @@ struct AgentChipVisual: Equatable {
                                    text: "!\(count)",
                                    showsDot: false,
                                    pulses: true,
-                                   hairline: false,
-                                   visible: true)
+                                   hairline: false)
         case .done:
             return AgentChipVisual(fill: Theme.agentDoneFill,
                                    border: Theme.agentDoneFill,
@@ -70,8 +64,7 @@ struct AgentChipVisual: Equatable {
                                    text: "",
                                    showsDot: false,
                                    pulses: false,
-                                   hairline: false,
-                                   visible: true)
+                                   hairline: false)
         }
     }
 }

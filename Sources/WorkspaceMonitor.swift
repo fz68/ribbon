@@ -23,6 +23,7 @@ final class WorkspaceMonitor: @unchecked Sendable {
     private var stopping = false
 
     init(label: String,
+         subscribeLabel: String,
          subscribeArguments: [String],
          validatesJSON: Bool,
          hasIPC: @escaping () -> Bool,
@@ -31,7 +32,7 @@ final class WorkspaceMonitor: @unchecked Sendable {
          reapQueue: DispatchQueue,
          log: ThrottledLogger) {
         self.label = label
-        self.subscribeLabel = label.hasSuffix("ctl") ? String(label.dropLast(3)) : label
+        self.subscribeLabel = subscribeLabel
         self.subscribeArguments = subscribeArguments
         self.validatesJSON = validatesJSON
         self.hasIPC = hasIPC

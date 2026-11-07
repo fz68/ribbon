@@ -2,13 +2,6 @@ import Foundation
 import Testing
 @testable import RibbonCore
 
-/// Writes an executable shell script at `path`, reporting whether it was written.
-private func writeStub(_ body: String, to path: String) -> Bool {
-    FileManager.default.createFile(atPath: path,
-                                   contents: Data(("#!/bin/sh\n" + body).utf8),
-                                   attributes: [.posixPermissions: 0o755])
-}
-
 @Suite(.serialized) final class MediaTests {
     init() { _ = TestBootstrap.tempRoot }
 

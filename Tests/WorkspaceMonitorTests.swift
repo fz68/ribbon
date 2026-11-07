@@ -2,31 +2,6 @@ import Foundation
 import Testing
 @testable import RibbonCore
 
-/// A thread-safe counter for the pokes the monitor delivers.
-private final class CounterBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored = 0
-
-    var value: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
-    }
-
-    func increment() {
-        lock.lock()
-        stored += 1
-        lock.unlock()
-    }
-}
-
-/// Writes an executable shell script at `path`, reporting whether it was written.
-private func writeStub(_ body: String, to path: String) -> Bool {
-    FileManager.default.createFile(atPath: path,
-                                   contents: Data(("#!/bin/sh\n" + body).utf8),
-                                   attributes: [.posixPermissions: 0o755])
-}
-
 @Suite(.serialized) final class WorkspaceMonitorTests {
     init() { _ = TestBootstrap.tempRoot }
 
@@ -38,6 +13,7 @@ private func writeStub(_ body: String, to path: String) -> Bool {
                              binary: @escaping () -> String?)
         -> WorkspaceMonitor {
         WorkspaceMonitor(label: label,
+                         subscribeLabel: label.hasSuffix("ctl") ? String(label.dropLast(3)) : label,
                          subscribeArguments: arguments,
                          validatesJSON: validatesJSON,
                          hasIPC: { hasIPC },
@@ -53,15 +29,15 @@ private func writeStub(_ body: String, to path: String) -> Bool {
         let stub = TestTemp.path("monitor-poll-stub")
         try? FileManager.default.removeItem(atPath: stub)
         #expect(writeStub("echo ok", to: stub), "the polling stub was written")
-        let counter = CounterBox()
+        let counter = Box<Int>(0)
         let monitor = makeMonitor(label: "aerospace",
                                   arguments: ["subscribe"],
                                   validatesJSON: true,
                                   hasIPC: false,
                                   binary: { stub })
-        monitor.start { counter.increment() }
+        monitor.start { counter.bump() }
         // The poll interval is 1.0 s, so one fire must land inside the window.
-        #expect(waitUntil { counter.value >= 1 }, "the one-second poll pokes the change")
+        #expect(waitUntil { (counter.value ?? 0) >= 1 }, "the one-second poll pokes the change")
         monitor.stop()
         let frozen = counter.value
         _ = waitUntil(timeout: 0.1) { false }
@@ -75,15 +51,15 @@ private func writeStub(_ body: String, to path: String) -> Bool {
         try? FileManager.default.removeItem(atPath: stub)
         #expect(writeStub(#"printf '{"id":"1","ok":true}\n'"#, to: stub),
                 "the subscribe stub was written")
-        let counter = CounterBox()
+        let counter = Box<Int>(0)
         let monitor = makeMonitor(label: "aerospace",
                                   arguments: ["subscribe"],
                                   validatesJSON: true,
                                   hasIPC: true,
                                   binary: { stub })
-        monitor.start { counter.increment() }
+        monitor.start { counter.bump() }
         // The stub prints one JSON line and exits; the poke is the line.
-        #expect(waitUntil { counter.value >= 1 }, "a valid JSON line pokes the change")
+        #expect(waitUntil { (counter.value ?? 0) >= 1 }, "a valid JSON line pokes the change")
         monitor.stop()
     }
 
@@ -92,14 +68,14 @@ private func writeStub(_ body: String, to path: String) -> Bool {
         try? FileManager.default.removeItem(atPath: stub)
         #expect(writeStub("printf 'notajson\\n'", to: stub),
                 "the non-JSON stub was written")
-        let counter = CounterBox()
+        let counter = Box<Int>(0)
         let monitor = makeMonitor(label: "aerospace",
                                   arguments: ["subscribe"],
                                   validatesJSON: true,
                                   hasIPC: true,
                                   binary: { stub })
-        monitor.start { counter.increment() }
-        _ = waitUntil(timeout: 1.5) { counter.value >= 1 }
+        monitor.start { counter.bump() }
+        _ = waitUntil(timeout: 1.5) { (counter.value ?? 0) >= 1 }
         #expect(counter.value == 0, "a non-JSON line does not poke in validated mode")
         monitor.stop()
     }
@@ -109,14 +85,14 @@ private func writeStub(_ body: String, to path: String) -> Bool {
         try? FileManager.default.removeItem(atPath: stub)
         #expect(writeStub("printf 'notajson\\n'", to: stub),
                 "the plain-line stub was written")
-        let counter = CounterBox()
+        let counter = Box<Int>(0)
         let monitor = makeMonitor(label: "aerospace",
                                   arguments: ["subscribe"],
                                   validatesJSON: false,
                                   hasIPC: true,
                                   binary: { stub })
-        monitor.start { counter.increment() }
-        #expect(waitUntil { counter.value >= 1 },
+        monitor.start { counter.bump() }
+        #expect(waitUntil { (counter.value ?? 0) >= 1 },
                 "without JSON validation any non-empty line pokes")
         monitor.stop()
     }
@@ -127,17 +103,17 @@ private func writeStub(_ body: String, to path: String) -> Bool {
         let stub = TestTemp.path("monitor-restart-stub")
         try? FileManager.default.removeItem(atPath: stub)
         #expect(writeStub("echo ok", to: stub), "the restart stub was written")
-        let counter = CounterBox()
+        let counter = Box<Int>(0)
         let monitor = makeMonitor(label: "aerospace",
                                   arguments: ["subscribe"],
                                   validatesJSON: true,
                                   hasIPC: false,
                                   binary: { stub })
-        monitor.start { counter.increment() }
-        #expect(waitUntil { counter.value >= 1 }, "the first begin pokes")
+        monitor.start { counter.bump() }
+        #expect(waitUntil { (counter.value ?? 0) >= 1 }, "the first begin pokes")
         monitor.restart()
         // The restart re-arms the same timer, so pokes keep coming.
-        #expect(waitUntil { counter.value >= 2 }, "restart keeps poking without the old child")
+        #expect(waitUntil { (counter.value ?? 0) >= 2 }, "restart keeps poking without the old child")
         monitor.stop()
     }
 }

@@ -224,20 +224,11 @@ final class AgentBridge: @unchecked Sendable {
     /// request sent, and a failure is logged without blocking the UI.
     func interrupt(sessionID: String) {
         let prefix = String(sessionID.prefix(8))
-        queue.async { [weak self] in
-            guard let self else { return }
-            guard let client = self.client else {
-                log("agent interrupt \(prefix) failed: no service")
-                return
+        send(completion: { ok in
+            if !ok {
+                log("agent interrupt \(prefix) failed")
             }
-            Task {
-                do {
-                    try await client.interrupt(sessionID: sessionID)
-                } catch {
-                    log("agent interrupt \(prefix) failed")
-                }
-            }
-        }
+        }) { try await $0.interrupt(sessionID: sessionID) }
     }
 
     // MARK: - Inputs
@@ -402,7 +393,7 @@ final class AgentBridge: @unchecked Sendable {
                     self.logPollFailure()
                     return
                 }
-                self.store.applyActivePoll(ids, now: self.now())
+                self.store.applyActivePoll(ids)
                 self.publish()
             }
         }

@@ -86,25 +86,6 @@ private func processList(_ output: String) -> WeztermLocator.Runner {
     }
 }
 
-private final class ClockBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Date
-
-    init(_ value: Date) { stored = value }
-
-    var value: Date {
-        lock.lock()
-        defer { lock.unlock() }
-        return stored
-    }
-
-    func advance(_ seconds: TimeInterval) {
-        lock.lock()
-        stored = stored.addingTimeInterval(seconds)
-        lock.unlock()
-    }
-}
-
 @Suite(.serialized) final class WeztermLocatorTests {
     init() { _ = TestBootstrap.tempRoot }
 
@@ -214,12 +195,12 @@ private final class ClockBox: @unchecked Sendable {
             paneEntry(5, tabID: 3, cwd: "/Users/x/repo", active: true),
         ])
         let runner = RunnerStub(stdout: stdout)
-        let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
+        let clock = Box<Date>(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
                                      processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
-                                     now: { clock.value })
+                                     now: { clock.value! })
 
         #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5)
         #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5)
@@ -227,7 +208,7 @@ private final class ClockBox: @unchecked Sendable {
         #expect(runner.calls.first?.arguments == ["cli", "list", "--format", "json"],
                 "the listing uses the JSON format")
 
-        clock.advance(3)
+        clock.store(clock.value!.addingTimeInterval(3))
         #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5)
         #expect(runner.callCount == 2, "the cache expires after two seconds")
     }
@@ -334,12 +315,12 @@ private final class ClockBox: @unchecked Sendable {
         ])
         let runner = RunnerStub(stdout: stdout)
         let psRunner = RunnerStub(stdout: Data("ttys004  opencode -c\n".utf8))
-        let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
+        let clock = Box<Date>(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
                                      processRunner: psRunner.run,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
-                                     now: { clock.value })
+                                     now: { clock.value! })
 
         #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5,
                 "the tty stage picks the opencode pane")
@@ -349,7 +330,7 @@ private final class ClockBox: @unchecked Sendable {
         #expect(psRunner.calls.first?.arguments == WeztermLocator.psArguments,
                 "the process list uses the documented ps invocation")
 
-        clock.advance(3)
+        clock.store(clock.value!.addingTimeInterval(3))
         #expect(locator.locatePane(directory: "/Users/x/repo")?.paneID == 5)
         #expect(psRunner.callCount == 2, "the tty set is refreshed with the pane list")
     }
@@ -413,12 +394,12 @@ private final class ClockBox: @unchecked Sendable {
         let runner = RunnerStub(stdout: Data(),
                                 failure: ProcessResult(status: 1, stdout: Data(),
                                                        timedOut: false, launchError: nil))
-        let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
+        let clock = Box<Date>(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
                                      processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
-                                     now: { clock.value })
+                                     now: { clock.value! })
 
         #expect(locator.locatePane(directory: "/Users/x/repo") == nil,
                 "a failed listing yields no pane")
@@ -430,12 +411,12 @@ private final class ClockBox: @unchecked Sendable {
         let runner = RunnerStub(stdout: Data(),
                                 failure: ProcessResult(status: -1, stdout: Data(),
                                                        timedOut: true, launchError: nil))
-        let clock = ClockBox(Date(timeIntervalSince1970: 1_800_000_000))
+        let clock = Box<Date>(Date(timeIntervalSince1970: 1_800_000_000))
         let locator = WeztermLocator(runner: runner.run,
                                      processRunner: noOpencodeProcesses,
                                      isExecutable: { _ in true },
                                      onPath: { "/fake/wezterm" },
-                                     now: { clock.value })
+                                     now: { clock.value! })
 
         #expect(locator.locatePane(directory: "/Users/x/repo") == nil,
                 "a timed-out listing yields no pane")

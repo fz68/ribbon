@@ -2,22 +2,6 @@ import Foundation
 import Testing
 @testable import RibbonCore
 
-/// Thread safe holder for the values the main queue delivers.
-private final class IntBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var stored: Int?
-    var value: Int? { lock.lock(); defer { lock.unlock() }; return stored }
-    func store(_ flag: Bool) { lock.lock(); stored = flag ? 1 : 0; lock.unlock() }
-    func bump() { lock.lock(); stored = (stored ?? 0) + 1; lock.unlock() }
-}
-
-/// Writes an executable shell script at `path`, reporting whether it was written.
-private func writeStub(_ body: String, to path: String) -> Bool {
-    FileManager.default.createFile(atPath: path,
-                                   contents: Data(("#!/bin/sh\n" + body).utf8),
-                                   attributes: [.posixPermissions: 0o755])
-}
-
 /// The two `WorkspaceBackend` adapters are pass-throughs; these tests pin the
 /// forwarding and the call safety of the monitoring triple.
 @Suite(.serialized) final class WorkspaceBackendTests {
@@ -73,15 +57,15 @@ private func writeStub(_ body: String, to path: String) -> Bool {
 
         AeroSpace.binaryOverride = okStub
         defer { AeroSpace.binaryOverride = nil }
-        let okBox = IntBox()
-        AeroSpaceBackend().focus("1") { okBox.store($0) }
+        let okBox = Box<Int>()
+        AeroSpaceBackend().focus("1") { okBox.store($0 ? 1 : 0) }
         #expect(waitUntil { okBox.value != nil },
                 "the completion runs within the wait window")
         #expect(okBox.value == 1, "a zero exit reports success")
 
         AeroSpace.binaryOverride = failStub
-        let failBox = IntBox()
-        AeroSpaceBackend().focus("1") { failBox.store($0) }
+        let failBox = Box<Int>()
+        AeroSpaceBackend().focus("1") { failBox.store($0 ? 1 : 0) }
         #expect(waitUntil { failBox.value != nil },
                 "the completion runs within the wait window")
         #expect(failBox.value == 0, "a non-zero exit reports failure")
@@ -99,7 +83,7 @@ private func writeStub(_ body: String, to path: String) -> Bool {
             Nehir.binaryOverride = nil
         }
 
-        let aeroBox = IntBox()
+        let aeroBox = Box<Int>()
         let aero = AeroSpaceBackend()
         aero.startMonitoring { aeroBox.bump() }
         aero.restartMonitoring()
@@ -109,7 +93,7 @@ private func writeStub(_ body: String, to path: String) -> Bool {
         aero.stopMonitoring()
         #expect((aeroBox.value ?? 0) >= 1, "the doubled aerospace stop is harmless")
 
-        let nehirBox = IntBox()
+        let nehirBox = Box<Int>()
         let nehir = NehirBackend()
         nehir.startMonitoring { nehirBox.bump() }
         nehir.restartMonitoring()
