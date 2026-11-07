@@ -1,5 +1,13 @@
 import Foundation
 
+/// One option of an answerable form field: what the bar sends and what it draws.
+struct PendingOption: Equatable {
+    /// The value the reply body carries.
+    let value: String
+    /// The user-facing label; empty when the service sent none.
+    let label: String
+}
+
 /// One thing the chip is waiting on: a permission decision or a form.
 struct PendingRequest: Equatable {
     /// What kind of interaction resolves it.
@@ -17,6 +25,12 @@ struct PendingRequest: Equatable {
     let resources: [String]
     /// Envelope time of the asking event, used to triage oldest first.
     let requestedAt: Date
+    /// The form field's options when the card can answer this form; empty when
+    /// it cannot (no options, too many, or more than one field).
+    var options: [PendingOption] = []
+    /// The form field key the reply body is keyed by; nil unless `options` was
+    /// captured, so "answerable" is exactly "options is non-empty".
+    var fieldKey: String? = nil
 }
 
 /// One opencode session as the chip knows it.
@@ -55,6 +69,12 @@ enum AgentChipState: Equatable {
 /// whole state machine, including the three-second `done` decay, is testable
 /// with fixed dates. The owner runs it on the event stream's serial queue and
 /// republishes snapshots to the UI.
+///
+/// Busy is event-driven: 2.2.6's `session.execution.*` events (2.1.x's
+/// `session.status` / `session.idle` on that generation) set the flag the moment
+/// a turn starts or ends, and an ended execution arms the green `done` window.
+/// `applyActivePoll` is only the backstop for a turn that began while the stream
+/// was down or an event lost in a reconnect gap.
 struct AgentSessionStore {
     /// How long the chip stays green after the last busy session went idle.
     static let doneDuration: TimeInterval = 3
@@ -94,9 +114,22 @@ struct AgentSessionStore {
             // Deleting the session drops its pending requests with it; the chip
             // must not keep asking about something that no longer exists.
             sessions.removeValue(forKey: id)
-        // Accelerator only: 2.2.x no longer emits this while generating, and
-        // the periodic active-session poll above overrides whatever it says.
-        case "session.status":
+        // Busy/idle has two event vocabularies, both feeding the same flag:
+        //
+        // - 2.1.x: `session.status` (busy / retry / idle) and `session.idle`.
+        // - 2.2.6: `session.execution.started` / `.succeeded` / `.failed` /
+        //   `.interrupted`, mapped by the decoder to the same statusType words.
+        //   `session.status` no longer fires in a normal turn there.
+        //
+        // Both paths may be present on a build that emits both; re-stating a
+        // transition is harmless (busy twice is idempotent, and an idle for a
+        // session that is already idle cannot re-arm the done window).
+        //
+        // The periodic `applyActivePoll` is the backstop: it catches a session
+        // that started while the stream was disconnected and a missed event.
+        case "session.status", "session.execution.started",
+             "session.execution.succeeded", "session.execution.failed",
+             "session.execution.interrupted":
             guard let id = event.sessionID else { return }
             switch event.statusType {
             case "busy", "retry":
@@ -129,15 +162,20 @@ struct AgentSessionStore {
                   let formID = Self.formID(from: event.data) else { return }
             ensureSession(id: id, directory: event.directory, now: now)
             let form = event.data["form"] as? [String: Any]
+            let answerable = Self.answerableField(in: form)
             addPending(PendingRequest(id: formID,
                                      kind: .form,
                                      action: form?["title"] as? String
                                          ?? event.data["action"] as? String
                                          ?? event.data["title"] as? String ?? "",
                                      resources: event.data["resources"] as? [String] ?? [],
-                                     requestedAt: event.created),
+                                     requestedAt: event.created,
+                                     options: answerable?.options ?? [],
+                                     fieldKey: answerable?.key),
                        to: id, now: now)
         case "form.replied", "form.cancelled":
+            // Matched by the form id in `data.id` (live replied payload) or the
+            // older nested/flat shapes, exactly like `form.created`.
             removePending(id: Self.formID(from: event.data))
         case "tui.session.select":
             // Only the arrival time matters today; the payload is tolerated in
@@ -192,10 +230,13 @@ struct AgentSessionStore {
 
     /// Applies the service's authoritative running set to the known sessions.
     ///
-    /// opencode 2.2.x stopped emitting `session.status` while a session
-    /// generates, so this polled set is what actually keeps `isBusy` truthful;
-    /// the event path below is only an accelerator on versions that still emit
-    /// it. Unknown ids are ignored on purpose: a session that was never listed
+    /// This is a backstop, not the primary signal: `session.execution.*` events
+    /// (2.2.6) and `session.status` / `session.idle` (2.1.x) flip `isBusy` the
+    /// moment a turn starts or ends. The poll exists for a session that started
+    /// while the stream was disconnected and for an event lost in a reconnect
+    /// gap, which is why it may confirm a flag the events already set.
+    ///
+    /// Unknown ids are ignored on purpose: a session that was never listed
     /// has no name or directory, so inventing it would put a phantom in the
     /// jump tiers.
     ///
@@ -268,7 +309,9 @@ struct AgentSessionStore {
 
     /// Every unresolved permission request, oldest first, as card targets.
     ///
-    /// Forms are excluded on purpose: P2's card can only answer permissions.
+    /// Permissions only: answerable forms have their own `formTriageList`, and
+    /// the two queues must not be confused (a permission reply and a form reply
+    /// hit different endpoints).
     /// `position`/`total` are 1-based over this permission queue, which is what
     /// the identity cell shows. The order is the same strict order as
     /// `triageHead`, so the card and the chip agree on what is oldest.
@@ -276,14 +319,36 @@ struct AgentSessionStore {
     /// Per request, not per group: the card counts requests, the chip counts
     /// session groups (see `chip(now:)`).
     var triageList: [AgentCardTarget] {
+        Self.cardTargets(for: sessions.values, kind: .permission)
+    }
+
+    /// Every answerable form, oldest first, as card targets.
+    ///
+    /// A parallel queue to `triageList`: a form with exactly one field carrying
+    /// two or three options can be answered from the bar's three decision cells,
+    /// so the card can open for it. Forms that fail that test stay out (the chip
+    /// still counts them and a tap jumps to their session). Positions are 1-based
+    /// over this form queue, which is what the identity cell shows.
+    var formTriageList: [AgentCardTarget] {
+        Self.cardTargets(for: sessions.values, kind: .form)
+    }
+
+    /// Builds one card queue from the store's sessions.
+    ///
+    /// `kind == .form` keeps only forms the card can answer (`options` captured
+    /// at `form.created`), so an unanswerable form can never become a card
+    /// target by accident.
+    private static func cardTargets(for sessions: [String: AgentSession].Values,
+                                    kind: PendingRequest.Kind) -> [AgentCardTarget] {
         var entries: [(session: AgentSession, request: PendingRequest)] = []
-        for session in sessions.values {
-            for request in session.pending where request.kind == .permission {
+        for session in sessions {
+            for request in session.pending where request.kind == kind {
+                if kind == .form, request.options.isEmpty || request.fieldKey == nil { continue }
                 entries.append((session, request))
             }
         }
         entries.sort {
-            Self.isOlder($0.request, in: $0.session, than: $1.request, in: $1.session)
+            isOlder($0.request, in: $0.session, than: $1.request, in: $1.session)
         }
         let total = entries.count
         return entries.enumerated().map { index, entry in
@@ -292,7 +357,13 @@ struct AgentSessionStore {
                             shortName: entry.session.shortName,
                             position: index + 1,
                             total: total,
-                            directory: entry.session.directory ?? "")
+                            directory: entry.session.directory ?? "",
+                            kind: entry.request.kind == .form
+                                ? .form(fieldKey: entry.request.fieldKey ?? "")
+                                : .permission,
+                            options: entry.request.options.map {
+                                AgentFormOption(value: $0.value, label: $0.label)
+                            })
         }
     }
 
@@ -370,6 +441,29 @@ struct AgentSessionStore {
         if let id = data["id"] as? String { return id }
         if let form = data["form"] as? [String: Any] { return form["id"] as? String }
         return data["formID"] as? String
+    }
+
+    /// The one field a form can be answered from, when the bar has room.
+    ///
+    /// The live payload nests `data.form.fields[{key, title, type, options}]`.
+    /// The card has exactly three action cells, so only a form with a single
+    /// field carrying two or three options is answerable; anything else (a text
+    /// field, four choices, two questions) stays a jump-only form. The label may
+    /// be missing; the view falls back to the value.
+    private static func answerableField(in form: [String: Any]?) -> (key: String,
+                                                                   options: [PendingOption])? {
+        guard let fields = form?["fields"] as? [[String: Any]], fields.count == 1,
+              let key = fields[0]["key"] as? String, !key.isEmpty,
+              let raw = fields[0]["options"] as? [[String: Any]],
+              (2...3).contains(raw.count) else {
+            return nil
+        }
+        let options = raw.compactMap { option -> PendingOption? in
+            guard let value = option["value"] as? String else { return nil }
+            return PendingOption(value: value, label: option["label"] as? String ?? "")
+        }
+        guard options.count == raw.count else { return nil }
+        return (key, options)
     }
 
     /// `basename` of a session directory, nil when there is none to show.

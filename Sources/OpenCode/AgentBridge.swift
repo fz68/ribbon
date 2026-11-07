@@ -4,12 +4,18 @@ import Foundation
 ///
 /// The chip and the card read the same snapshot, so they can never disagree
 /// about whether the bridge is alive or what the queue looks like. `triage`
-/// carries permissions only: P2's card cannot answer forms.
+/// carries permissions only and `formTriage` carries the forms the card can
+/// answer; the two queues stay apart because their replies hit different
+/// endpoints.
 struct AgentSnapshot: Equatable {
     let chip: AgentChipState
     let visible: Bool
     /// Permission requests only, oldest first, with 1-based positions.
     let triage: [AgentCardTarget]
+    /// Answerable forms only (one field, two or three options), oldest first,
+    /// with 1-based positions over this queue. A chip tap opens one of these
+    /// when no permission is waiting; an unanswerable form closes the card path.
+    let formTriage: [AgentCardTarget]
     /// Where a chip tap jumps when nothing is pending: the most recently touched
     /// busy session, else the most recently touched session. nil only when the
     /// store has no sessions. The card path supplies its own locked target, so
@@ -145,7 +151,8 @@ final class AgentBridge: @unchecked Sendable {
             self.lastContact = nil
             self.store = AgentSessionStore()
             self.reconcileGeneration += 1
-            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: [], jump: nil, pendingJump: nil, interrupt: nil))
+            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: [], formTriage: [],
+                                         jump: nil, pendingJump: nil, interrupt: nil))
         }
     }
 
@@ -182,6 +189,40 @@ final class AgentBridge: @unchecked Sendable {
                     try await client.replyPermission(sessionID: sessionID,
                                                      requestID: requestID,
                                                      decision: decision)
+                    succeeded = true
+                } catch {
+                    succeeded = false
+                }
+                queue.async { result.run(succeeded) }
+            }
+        }
+    }
+
+    /// Sends one form answer for the form the card locked.
+    ///
+    /// Same contract as `reply`: the ids and the field key come from the locked
+    /// target, never from a fresh lookup, and the completion reports on the
+    /// bridge queue. A missing service reports failure immediately, which keeps
+    /// the card open and flashing instead of silently closing it.
+    func replyForm(sessionID: String,
+                   formID: String,
+                   fieldKey: String,
+                   value: String,
+                   completion: @escaping (Bool) -> Void) {
+        queue.async { [weak self] in
+            guard let self, let client = self.client else {
+                completion(false)
+                return
+            }
+            let queue = self.queue
+            let result = SendableCompletion(run: completion)
+            Task {
+                let succeeded: Bool
+                do {
+                    try await client.replyForm(sessionID: sessionID,
+                                               formID: formID,
+                                               fieldKey: fieldKey,
+                                               value: value)
                     succeeded = true
                 } catch {
                     succeeded = false
@@ -339,10 +380,13 @@ final class AgentBridge: @unchecked Sendable {
 
     /// Polls the service's running set.
     ///
-    /// On 2.2.x this is the only busy signal: a session that starts generating
-    /// after the last resync never emits a status event, so an event-only chip
-    /// would stay idle forever. A failed poll leaves the store untouched (a
-    /// stale busy flag beats a false idle) and is logged at most once a minute;
+    /// The primary busy signal is now the event stream: 2.2.6 sends
+    /// `session.execution.started` / `.succeeded` / `.failed` / `.interrupted`
+    /// (2.1.x sends `session.status` / `session.idle`), which flip the flag
+    /// sub-second. This 3 s poll stays as the backstop for a session that
+    /// started while the stream was disconnected and for an event lost in a
+    /// reconnect gap. A failed poll leaves the store untouched (a stale busy
+    /// flag beats a false idle) and is logged at most once a minute;
     /// overlapping polls are skipped. The poll lives and dies with the bridge.
     private func startActivePollTimer() {
         activePollTimer?.cancel()
@@ -397,6 +441,7 @@ final class AgentBridge: @unchecked Sendable {
                                                lastContact: lastContact,
                                                now: now),
             triage: store.triageList,
+            formTriage: store.formTriageList,
             jump: store.jumpTarget,
             pendingJump: store.pendingJumpTarget,
             interrupt: store.interruptTarget

@@ -1,5 +1,13 @@
 import Foundation
 
+/// One option a form card can answer with.
+struct AgentFormOption: Equatable {
+    /// The value the reply body carries.
+    let value: String
+    /// The user-facing label; empty when the service sent none.
+    let label: String
+}
+
 /// The request a card is showing, captured when the card opens.
 ///
 /// Locking `sessionID` and `requestID` at open time is the whole point: the
@@ -7,6 +15,17 @@ import Foundation
 /// arrives), and a later decision must still land on the request the user was
 /// looking at, never on whatever happens to be first now.
 struct AgentCardTarget: Equatable {
+    /// What the card answers: a permission decision or a form choice.
+    ///
+    /// An enum rather than an `isForm` flag plus a `fieldKey`: the key cannot
+    /// exist without the form case, so a target can never claim to be a form
+    /// without one.
+    enum Kind: Equatable {
+        case permission
+        /// A form; `fieldKey` is the answer key the reply body is keyed by.
+        case form(fieldKey: String)
+    }
+
     let sessionID: String
     let requestID: String
     let shortName: String
@@ -18,6 +37,31 @@ struct AgentCardTarget: Equatable {
     /// unknown (the session had no directory); the jump then degrades to
     /// app-only.
     let directory: String
+    /// The form field or permission this card answers.
+    var kind: Kind = .permission
+    /// The form options to show in the action cells; empty for a permission.
+    /// At most three: the card has exactly three action cells.
+    var options: [AgentFormOption] = []
+
+    /// True when the card must send a form reply instead of a decision.
+    var isForm: Bool {
+        if case .form = kind { return true }
+        return false
+    }
+
+    /// The field key a form reply is keyed by; nil for a permission.
+    var fieldKey: String? {
+        if case .form(let key) = kind { return key }
+        return nil
+    }
+}
+
+/// What the card submits, captured when the user taps a cell.
+enum AgentCardAnswer: Equatable {
+    /// A permission decision (once / always / reject).
+    case permission(AgentDecision)
+    /// One form option value, sent against the locked field key.
+    case form(option: String)
 }
 
 /// Where a chip tap should jump: a session, not a request.
@@ -41,8 +85,8 @@ struct AgentCardMachine {
     enum Phase: Equatable {
         case closed
         case open(AgentCardTarget, openedAt: Date)
-        case submitting(AgentCardTarget, decision: AgentDecision)
-        case failed(AgentCardTarget, decision: AgentDecision, flashUntil: Date)
+        case submitting(AgentCardTarget, answer: AgentCardAnswer)
+        case failed(AgentCardTarget, answer: AgentCardAnswer, flashUntil: Date)
     }
 
     private(set) var phase: Phase = .closed
@@ -114,9 +158,21 @@ struct AgentCardMachine {
     /// A failed card may be retried before `recoverFromFlash` runs, so the
     /// decision path never depends on the controller's tick order.
     mutating func choose(decision: AgentDecision, now: Date) -> AgentCardTarget? {
+        beginSubmit(.permission(decision))
+    }
+
+    /// The form counterpart: locks the target and submits one option value.
+    ///
+    /// Nothing about the option is looked up again later: the value travels with
+    /// the locked target, exactly like a permission decision.
+    mutating func choose(option: String, now: Date) -> AgentCardTarget? {
+        beginSubmit(.form(option: option))
+    }
+
+    private mutating func beginSubmit(_ answer: AgentCardAnswer) -> AgentCardTarget? {
         switch phase {
         case .open(let target, _), .failed(let target, _, _):
-            phase = .submitting(target, decision: decision)
+            phase = .submitting(target, answer: answer)
             return target
         case .submitting, .closed:
             return nil
@@ -133,8 +189,8 @@ struct AgentCardMachine {
     /// The reply failed: keep the card open, flash it, and do not retry on our
     /// own. The user decides whether to press again.
     mutating func failed(now: Date, flash: TimeInterval) {
-        guard case .submitting(let target, let decision) = phase else { return }
-        phase = .failed(target, decision: decision,
+        guard case .submitting(let target, let answer) = phase else { return }
+        phase = .failed(target, answer: answer,
                         flashUntil: now.addingTimeInterval(flash))
     }
 

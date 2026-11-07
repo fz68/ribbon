@@ -114,8 +114,17 @@ final class EventStream {
         "permission.replied",
         "session.created",
         "session.deleted",
+        // 2.1.x busy/idle path. 2.2.6 no longer emits these in a normal turn;
+        // session.status now only reports provider retry, if anything.
         "session.status",
         "session.idle",
+        // 2.2.6 busy/idle path: the execution boundary. Unlisted types are
+        // dropped by the prefilter, so all four must be here even though the
+        // store only needs the started/ended distinction.
+        "session.execution.started",
+        "session.execution.succeeded",
+        "session.execution.failed",
+        "session.execution.interrupted",
         "form.created",
         "form.replied",
         "form.cancelled",

@@ -92,6 +92,73 @@ private func at(_ seconds: TimeInterval) -> Date {
         #expect(store.chip(now: at(5)) == .idle, "the window decays")
     }
 
+    @Test func testExecutionStartedSetsBusy() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_1"])
+        try apply("session.execution.started", at: 1, to: &store,
+                  data: ["sessionID": "ses_1"])
+
+        #expect(store.sessions["ses_1"]?.isBusy == true,
+                "2.2.6's execution boundary marks the session busy")
+        #expect(store.chip(now: at(1)) == .busy(count: 1))
+        #expect(store.doneUntil == nil, "starting work arms no done window")
+    }
+
+    @Test func testExecutionSucceededClearsBusyAndArmsDone() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_1"])
+        try apply("session.execution.started", at: 1, to: &store,
+                  data: ["sessionID": "ses_1"])
+        try apply("session.execution.succeeded", at: 2, to: &store,
+                  data: ["sessionID": "ses_1"])
+
+        #expect(store.sessions["ses_1"]?.isBusy == false, "the ended turn clears busy")
+        #expect(store.doneUntil == at(5), "the green window is armed for three seconds")
+        #expect(store.chip(now: at(2)) == .done, "the transition shows the green flash")
+        #expect(store.chip(now: at(4.9)) == .done, "done is drawn just before the window ends")
+        #expect(store.chip(now: at(5)) == .idle, "the window decays after three seconds")
+    }
+
+    @Test(arguments: ["session.execution.failed", "session.execution.interrupted"])
+    func testFailedOrInterruptedTurnAlsoEndsInDone(_ type: String) throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_1"])
+        try apply("session.execution.started", at: 1, to: &store,
+                  data: ["sessionID": "ses_1"])
+        try apply(type, at: 2, to: &store, data: ["sessionID": "ses_1"])
+
+        #expect(store.sessions["ses_1"]?.isBusy == false,
+                "a failed or interrupted turn is still over")
+        #expect(store.doneUntil == at(5),
+                "a finished turn flashes green whatever its outcome")
+        #expect(store.chip(now: at(2)) == .done)
+        #expect(store.chip(now: at(5)) == .idle)
+    }
+
+    @Test func testExecutionAndStatusPathsShareTheSameFlags() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", to: &store, data: ["sessionID": "ses_1"])
+
+        // 2.1.x path still works alongside the new one.
+        try apply("session.status", at: 1, to: &store,
+                  data: ["sessionID": "ses_1", "status": ["type": "busy"]])
+        #expect(store.sessions["ses_1"]?.isBusy == true, "session.status busy still sets the flag")
+
+        // A re-stated start on an already busy session changes nothing.
+        try apply("session.execution.started", at: 2, to: &store,
+                  data: ["sessionID": "ses_1"])
+        #expect(store.sessions["ses_1"]?.isBusy == true)
+        #expect(store.doneUntil == nil)
+
+        try apply("session.execution.succeeded", at: 3, to: &store,
+                  data: ["sessionID": "ses_1"])
+        #expect(store.doneUntil == at(6), "the execution path ends the turn")
+
+        // A second idle for an already idle session cannot re-arm the window.
+        try apply("session.idle", at: 4, to: &store, data: ["sessionID": "ses_1"])
+        #expect(store.doneUntil == at(6), "a repeated idle leaves the window alone")
+    }
+
     @Test func testIdleWithoutBusyNeverArmsDone() throws {
         var store = AgentSessionStore()
         try apply("session.created", to: &store, data: ["sessionID": "ses_1"])
@@ -359,6 +426,158 @@ private func at(_ seconds: TimeInterval) -> Date {
         try apply("form.cancelled", at: 3, to: &store,
                   data: ["form": ["id": "frm_1", "sessionID": "ses_1"]])
         #expect(store.triageCount == 0, "a nested cancel removes the form")
+    }
+
+    @Test func testLiveAnswerableFormCapturesOptionsAndFieldKey() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/tmp",
+                  to: &store, data: ["sessionID": "ses_1"])
+        // The exact live 2.2.6 payload.
+        try apply("form.created", at: 2, to: &store, data: [
+            "form": [
+                "id": "frm_1",
+                "sessionID": "ses_1",
+                "title": "probe: go or stop?",
+                "fields": [[
+                    "key": "choice",
+                    "title": "Go or stop?",
+                    "type": "string",
+                    "options": [
+                        ["value": "go", "label": "Go"],
+                        ["value": "stop", "label": "Stop"],
+                    ],
+                ]],
+            ],
+        ])
+
+        let form = try #require(store.triageHead?.request)
+        #expect(form.kind == .form)
+        #expect(form.fieldKey == "choice", "the single field's key is the answer key")
+        #expect(form.options == [PendingOption(value: "go", label: "Go"),
+                                 PendingOption(value: "stop", label: "Stop")],
+                "the option values and labels are kept in order")
+
+        let card = try #require(store.formTriageList.first)
+        #expect(card.requestID == "frm_1")
+        #expect(card.isForm, "an answerable form becomes a card target")
+        #expect(card.fieldKey == "choice")
+        #expect(card.options == [AgentFormOption(value: "go", label: "Go"),
+                                AgentFormOption(value: "stop", label: "Stop")])
+        #expect(store.triageList.isEmpty, "a form never enters the permission queue")
+    }
+
+    @Test func testFourOptionsMakeAFormUnanswerable() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, to: &store, data: ["sessionID": "ses_1"])
+        try apply("form.created", at: 2, to: &store, data: [
+            "form": [
+                "id": "frm_1",
+                "sessionID": "ses_1",
+                "title": "Pick one",
+                "fields": [[
+                    "key": "choice",
+                    "title": "Pick one",
+                    "type": "string",
+                    "options": [
+                        ["value": "a", "label": "A"],
+                        ["value": "b", "label": "B"],
+                        ["value": "c", "label": "C"],
+                        ["value": "d", "label": "D"],
+                    ],
+                ]],
+            ],
+        ])
+
+        let form = try #require(store.triageHead?.request)
+        #expect(form.options.isEmpty, "four options do not fit the three cells")
+        #expect(form.fieldKey == nil, "no field key without captured options")
+        #expect(store.formTriageList.isEmpty, "the card cannot open for it")
+        #expect(store.triageCount == 1, "the form still awaits the terminal")
+    }
+
+    @Test func testTwoFieldsMakeAFormUnanswerable() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, to: &store, data: ["sessionID": "ses_1"])
+        try apply("form.created", at: 2, to: &store, data: [
+            "form": [
+                "id": "frm_1",
+                "sessionID": "ses_1",
+                "title": "Two questions",
+                "fields": [
+                    ["key": "first", "title": "One", "type": "string",
+                     "options": [["value": "a", "label": "A"],
+                                 ["value": "b", "label": "B"]]],
+                    ["key": "second", "title": "Two", "type": "string",
+                     "options": [["value": "c", "label": "C"],
+                                 ["value": "d", "label": "D"]]],
+                ],
+            ],
+        ])
+
+        let form = try #require(store.triageHead?.request)
+        #expect(form.options.isEmpty, "two questions cannot both be answered from one card")
+        #expect(form.fieldKey == nil)
+        #expect(store.formTriageList.isEmpty)
+    }
+
+    @Test func testLiveFormRepliedRemovesTheForm() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, to: &store, data: ["sessionID": "ses_1"])
+        try apply("form.created", at: 2, to: &store, data: [
+            "form": [
+                "id": "frm_1",
+                "sessionID": "ses_1",
+                "title": "probe: go or stop?",
+                "fields": [["key": "choice", "title": "Go or stop?", "type": "string",
+                            "options": [["value": "go", "label": "Go"],
+                                        ["value": "stop", "label": "Stop"]]]],
+            ],
+        ])
+        #expect(store.formTriageList.count == 1)
+
+        // The exact live 2.2.6 reply payload: no envelope `location`, the form
+        // id sits in `data.id`.
+        try apply("form.replied", at: 3, to: &store,
+                  data: ["id": "frm_1", "sessionID": "ses_1", "answer": ["choice": "go"]])
+        #expect(store.triageCount == 0, "a replied form leaves the queue")
+        #expect(store.formTriageList.isEmpty)
+        #expect(store.chip(now: at(3)) == .idle)
+    }
+
+    @Test func testFormTriageOrdersAnswerableFormsOldestFirst() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, to: &store, data: ["sessionID": "ses_a"])
+        try apply("session.created", at: 1, to: &store, data: ["sessionID": "ses_b"])
+
+        try apply("form.created", at: 9, to: &store, data: [
+            "form": ["id": "frm_late", "sessionID": "ses_a", "title": "Late",
+                     "fields": [["key": "k", "title": "Late", "type": "string",
+                                 "options": [["value": "x", "label": "X"],
+                                             ["value": "y", "label": "Y"]]]]],
+        ])
+        // An unanswerable form must not consume a position in the queue.
+        try apply("form.created", at: 5, to: &store, data: [
+            "form": ["id": "frm_wide", "sessionID": "ses_a", "title": "Wide",
+                     "fields": [["key": "k", "title": "Wide", "type": "string",
+                                 "options": [["value": "1", "label": "1"],
+                                             ["value": "2", "label": "2"],
+                                             ["value": "3", "label": "3"],
+                                             ["value": "4", "label": "4"]]]]],
+        ])
+        try apply("form.created", at: 1, to: &store, data: [
+            "form": ["id": "frm_early", "sessionID": "ses_b", "title": "Early",
+                     "fields": [["key": "k", "title": "Early", "type": "string",
+                                 "options": [["value": "x", "label": "X"],
+                                             ["value": "y", "label": "Y"]]]]],
+        ])
+
+        let forms = store.formTriageList
+        #expect(forms.map(\.requestID) == ["frm_early", "frm_late"],
+                "answerable forms are oldest first, unanswerable ones excluded")
+        #expect(forms.map(\.position) == [1, 2], "positions are 1-based over the form queue")
+        #expect(forms.map(\.total) == [2, 2], "the total is the answerable form count")
+        #expect(forms.map(\.sessionID) == ["ses_b", "ses_a"])
+        #expect(store.triageList.isEmpty, "the permission queue stays untouched")
     }
 
     @Test func testSessionSelectMarksTheSessionSeen() throws {

@@ -38,42 +38,86 @@ extension TouchBarController {
         agentCard.onDecision = { [weak self] decision in
             self?.decideAgentCard(decision)
         }
+        agentCard.onOption = { [weak self] value in
+            self?.answerAgentCardForm(option: value)
+        }
     }
 
     // MARK: - Opening
 
-    /// First tap: lock the oldest pending permission and show the card; with
-    /// nothing pending, jump to the session that needs attention instead.
+    /// First tap: lock the oldest pending permission and show the card; with no
+    /// permission waiting, open on the oldest answerable form. With neither,
+    /// jump to the session that needs attention instead.
     func handleAgentChipTap() {
         // Effective visibility: the menu switch can hide the chip while the
         // bridge still publishes a healthy snapshot.
         guard agentVisible, let snapshot = agentSnapshot else { return }
         guard case .closed = agentCardMachine.phase else { return }
-        guard let target = snapshot.triage.first else {
-            // Nothing to approve. A waiting form cannot be answered from the
-            // bar, so the tap lands on the session holding it; otherwise the
-            // usual most-relevant-session jump.
-            let jump: AgentJumpTarget?
-            if case .awaiting = snapshot.chip {
-                jump = snapshot.pendingJump ?? snapshot.jump
-            } else {
-                jump = snapshot.jump
-            }
-            if let jump { jumpToAgentTarget(jump) }
+        // Permissions outrank forms: the card answers exactly one queue, and a
+        // permission is the older, blocking kind of wait.
+        if let target = snapshot.triage.first ?? snapshot.formTriage.first {
+            openAgentCard(target)
             return
         }
+        // Nothing answerable. A form that needs the terminal keeps today's
+        // behaviour: the tap lands on the session holding it; otherwise the
+        // usual most-relevant-session jump.
+        let jump: AgentJumpTarget?
+        if case .awaiting = snapshot.chip {
+            jump = snapshot.pendingJump ?? snapshot.jump
+        } else {
+            jump = snapshot.jump
+        }
+        if let jump { jumpToAgentTarget(jump) }
+    }
+
+    /// Locks `target` into the machine and shows the card.
+    private func openAgentCard(_ target: AgentCardTarget) {
         guard agentCardMachine.open(target: target, now: Date()) else { return }
         log("agent card open \(target.shortName) \(target.position)/\(target.total)")
         renderAgentCard()
         startAgentCardTimer()
     }
 
-    /// Second tap: submit the decision against the target locked at open.
+    /// Second tap on a decision cell: submit the decision against the target
+    /// locked at open.
     func decideAgentCard(_ decision: AgentDecision) {
         guard let target = agentCardMachine.choose(decision: decision, now: Date()) else { return }
         // The target came out of the machine, never out of the live queue: a
         // decision must not land on a request that shifted under the card.
         log("agent card decide \(decision.rawValue)")
+        submitAgentCard { bridge, completion in
+            bridge.reply(sessionID: target.sessionID,
+                         requestID: target.requestID,
+                         decision: decision,
+                         completion: completion)
+        }
+    }
+
+    /// Tap on an option cell of a form card: send that option for the field the
+    /// card locked at open.
+    ///
+    /// The option value itself is deliberately never logged: it is form content.
+    func answerAgentCardForm(option: String) {
+        guard let target = agentCardMachine.choose(option: option, now: Date()),
+              let fieldKey = target.fieldKey else { return }
+        log("agent card form \(target.shortName) \(target.position)/\(target.total)")
+        submitAgentCard { bridge, completion in
+            bridge.replyForm(sessionID: target.sessionID,
+                             formID: target.requestID,
+                             fieldKey: fieldKey,
+                             value: option,
+                             completion: completion)
+        }
+    }
+
+    /// Shared submit plumbing for both card kinds.
+    ///
+    /// The machine is already `.submitting` when this runs; success closes the
+    /// card, failure leaves it open for one flash and no automatic retry. A late
+    /// completion for a card that was dismissed or race-closed is ignored.
+    private func submitAgentCard(send: @escaping (AgentBridge,
+                                                  @escaping (Bool) -> Void) -> Void) {
         renderAgentCard()
 
         guard let bridge = agentBridge else {
@@ -84,9 +128,7 @@ extension TouchBarController {
             log("agent card failed")
             return
         }
-        bridge.reply(sessionID: target.sessionID,
-                     requestID: target.requestID,
-                     decision: decision) { [weak self] succeeded in
+        send(bridge) { [weak self] succeeded in
             DispatchQueue.main.async {
                 guard let self else { return }
                 if succeeded {
@@ -96,9 +138,7 @@ extension TouchBarController {
                         self.closeAgentCardUI()
                     }
                 } else {
-                    // Stay open, flash once, no automatic retry. A late failure
-                    // for a card that was dismissed or race-closed must not log
-                    // a transition that never happened.
+                    // Stay open, flash once, no automatic retry.
                     guard case .submitting = self.agentCardMachine.phase else { return }
                     self.agentCardMachine.failed(now: Date(),
                                                  flash: Theme.Timing.agentCardErrorFlash)
@@ -125,9 +165,12 @@ extension TouchBarController {
             return
         }
         guard let target = agentCardMachine.target else { return }
-        // permission.replied from any terminal removes the request from the
-        // queue; the card closes without sending anything.
-        guard !snapshot.triage.contains(where: { $0.requestID == target.requestID }) else { return }
+        // permission.replied / form.replied from any terminal removes the entry
+        // from its queue; the card closes without sending anything. Both queues
+        // are checked because the card answers either kind of wait.
+        let stillQueued = snapshot.triage.contains { $0.requestID == target.requestID }
+            || snapshot.formTriage.contains { $0.requestID == target.requestID }
+        guard !stillQueued else { return }
         if agentCardMachine.raceReplied(requestID: target.requestID) {
             log("agent card race-closed")
             closeAgentCardUI()

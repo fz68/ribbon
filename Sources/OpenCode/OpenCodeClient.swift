@@ -99,6 +99,23 @@ struct OpenCodeClient {
         _ = try await send("POST", path, body: body)
     }
 
+    /// POST `/api/session/{sessionID}/form/{formID}/reply`.
+    ///
+    /// The live body is `{"answer": {<fieldKey>: <optionValue>}}`; 204 on
+    /// success, which `send` already treats as success.
+    func replyForm(sessionID: String,
+                   formID: String,
+                   fieldKey: String,
+                   value: String) async throws {
+        struct Reply: Encodable {
+            let answer: [String: String]
+        }
+        let body = try JSONEncoder().encode(Reply(answer: [fieldKey: value]))
+        let path = "api/session/\(Self.encodePathComponent(sessionID))"
+            + "/form/\(Self.encodePathComponent(formID))/reply"
+        _ = try await send("POST", path, body: body)
+    }
+
     /// GET `/api/session?limit=N`.
     ///
     /// The live service wraps the page as `{"data": [...], "cursor": {...}}`; a

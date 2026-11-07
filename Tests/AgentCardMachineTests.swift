@@ -31,12 +31,56 @@ private func cardTarget(_ requestID: String = "per_1",
 
         let locked = machine.choose(decision: .once, now: cardTime.addingTimeInterval(1))
         #expect(locked == target, "choose hands back the locked target")
-        #expect(machine.phase == .submitting(target, decision: .once))
+        #expect(machine.phase == .submitting(target, answer: .permission(.once)))
 
         let submitted = machine.submitted(now: cardTime.addingTimeInterval(2))
         #expect(submitted, "a success closes the card")
         #expect(machine.phase == .closed)
         #expect(machine.target == nil)
+    }
+
+    @Test func testFormTargetLocksFieldKeyAndOption() {
+        var machine = AgentCardMachine()
+        let target = AgentCardTarget(sessionID: "ses_1",
+                                     requestID: "frm_1",
+                                     shortName: "ribbon",
+                                     position: 1,
+                                     total: 1,
+                                     directory: "/Users/x/projects/ribbon",
+                                     kind: .form(fieldKey: "choice"),
+                                     options: [AgentFormOption(value: "go", label: "Go"),
+                                               AgentFormOption(value: "stop", label: "Stop")])
+        let opened = machine.open(target: target, now: cardTime)
+        #expect(opened, "a closed card opens on a form target")
+        #expect(machine.target?.isForm == true, "the card knows it answers a form")
+        #expect(machine.target?.fieldKey == "choice", "the field key is locked with it")
+
+        let locked = machine.choose(option: "stop", now: cardTime.addingTimeInterval(1))
+        #expect(locked == target, "choose hands back the locked form target")
+        #expect(machine.phase == .submitting(target, answer: .form(option: "stop")),
+                "the option travels with the locked target, not the live queue")
+
+        let second = machine.choose(option: "go", now: cardTime.addingTimeInterval(2))
+        #expect(second == nil, "a second option cannot race the first")
+
+        machine.failed(now: cardTime.addingTimeInterval(2), flash: 0.6)
+        guard case .failed(let failedTarget, let answer, _) = machine.phase else {
+            Issue.record("expected failed, got \(machine.phase)")
+            return
+        }
+        #expect(failedTarget == target, "a failed form reply keeps the locked target")
+        #expect(answer == .form(option: "stop"), "and the chosen option")
+
+        let late = machine.submitted(now: cardTime.addingTimeInterval(3))
+        #expect(late == false, "a late success while flashing must not close the card")
+
+        machine.recoverFromFlash(now: cardTime.addingTimeInterval(3), flash: 0.6)
+        let retry = machine.choose(option: "go", now: cardTime.addingTimeInterval(4))
+        #expect(retry == target, "the recovered form card can retry another option")
+
+        let submitted = machine.submitted(now: cardTime.addingTimeInterval(5))
+        #expect(submitted, "an accepted form reply closes the card")
+        #expect(machine.phase == .closed)
     }
 
     @Test func testOpenRejectsWhenAlreadyOpen() {
@@ -67,7 +111,7 @@ private func cardTarget(_ requestID: String = "per_1",
 
         let second = machine.choose(decision: .always, now: cardTime.addingTimeInterval(1))
         #expect(second == nil, "a second decision cannot race the first")
-        #expect(machine.phase == .submitting(target, decision: .once))
+        #expect(machine.phase == .submitting(target, answer: .permission(.once)))
     }
 
     @Test func testRaceRepliedMatchesByRequestIDOnly() {
@@ -110,7 +154,7 @@ private func cardTarget(_ requestID: String = "per_1",
         let expired = machine.expire(now: cardTime.addingTimeInterval(1000), timeout: 5)
         #expect(expired == false,
                 "a submit in flight waits on the service, not on the user")
-        #expect(machine.phase == .submitting(target, decision: .reject))
+        #expect(machine.phase == .submitting(target, answer: .permission(.reject)))
     }
 
     @Test func testExpireClosesAfterTimeoutNotBefore() {
@@ -134,12 +178,12 @@ private func cardTarget(_ requestID: String = "per_1",
         _ = machine.choose(decision: .once, now: cardTime.addingTimeInterval(1))
 
         machine.failed(now: cardTime.addingTimeInterval(2), flash: 0.6)
-        guard case .failed(let failedTarget, let decision, let flashUntil) = machine.phase else {
+        guard case .failed(let failedTarget, let answer, let flashUntil) = machine.phase else {
             Issue.record("expected failed, got \(machine.phase)")
             return
         }
         #expect(failedTarget == target, "the failure keeps the locked target")
-        #expect(decision == .once, "the failure keeps the chosen decision")
+        #expect(answer == .permission(.once), "the failure keeps the chosen answer")
         #expect(flashUntil == cardTime.addingTimeInterval(2.6))
 
         machine.recoverFromFlash(now: cardTime.addingTimeInterval(2.5), flash: 0.6)

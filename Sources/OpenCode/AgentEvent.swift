@@ -16,7 +16,13 @@ struct AgentEvent: Equatable {
     let sessionID: String?
     /// Permission request id (`data.id` for asked, `data.requestID` for replied).
     let permissionID: String?
-    /// `session.status` only: the new status kind (`idle`, `busy`, `retry`).
+    /// Session status the store understands (`busy`, `idle`, `retry`).
+    ///
+    /// `session.status` carries its own kind. opencode 2.2.6's execution events
+    /// carry none, so they are mapped here into the same vocabulary: a started
+    /// execution is `busy`; a succeeded, failed or interrupted execution is
+    /// `idle` (the turn ended - a failed or interrupted turn still counts as a
+    /// finished turn, so the chip's green done flash fires for it too).
     let statusType: String?
     /// Envelope `location.directory`, falling back to the payload's own
     /// location. It gives the session short name without an extra request.
@@ -89,6 +95,21 @@ extension AgentEvent {
             sessionID = data["sessionID"] as? String
             permissionID = nil
             statusType = nil
+        case "session.execution.started":
+            // 2.2.6's busy boundary: `created` equals `session.time.busy` to the
+            // millisecond. Mapped to the store's vocabulary here so the reducer
+            // stays the same for both generations.
+            sessionID = data["sessionID"] as? String
+            permissionID = nil
+            statusType = "busy"
+        case "session.execution.succeeded", "session.execution.failed",
+             "session.execution.interrupted":
+            // 2.2.6's idle boundary, 0-3 ms after `session.time.idle`. Every
+            // outcome means the turn ended; a failed turn is still "not busy
+            // any more", so it arms the same done window.
+            sessionID = data["sessionID"] as? String
+            permissionID = nil
+            statusType = "idle"
         case "form.created", "form.replied", "form.cancelled":
             // The nested `form` object is expected from the static schema; the
             // flat shape is tolerated as a fallback. The live form event itself

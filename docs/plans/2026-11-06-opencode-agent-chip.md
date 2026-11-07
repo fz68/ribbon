@@ -3,7 +3,7 @@
 日期: 2026-11-06
 仓库: ribbon (本仓库)
 目标版本: opencode 2.1.x (本机实测 2.1.4)
-状态: P0-P4 已落地 (form 卡与 tui.session.select 精确 pane 映射两项延后, 未随 P4 落地); spike A1/A2/A3/A5/A6 已完成, A4 仍未观测
+状态: P0-P4 已落地 (form 卡已随 LIVE payload 验证补完; 仅 tui.session.select 精确 pane 映射仍延后); spike A1/A2/A3/A5/A6 已完成, A4 仍未观测
 
 ## 1. 目标
 
@@ -36,7 +36,7 @@ Touch Bar 上增加一个 56pt 的 agent chip, 实时显示本机 opencode 后�
 | 事件流 wire (A6 实测) | GET /api/event, 200, content-type: text/event-stream; 帧为 `data: {json}` 行, 空行分隔; 连接后 ~25ms 内收到 server.connected 事件 (data 为空对象) 与 `: heartbeat` 注释行 |
 | types 过滤 (A6 实测) | 2.1.4 服务端忽略 ?types= 参数 (伪事件名也全量推送), 必须客户端本地过滤 |
 | 事件信封 (实测) | {id: "evt_...", created: 毫秒 epoch, type, location: {directory}, data, durable: {aggregateID, seq, version}}; 事件 id 前缀 evt_, 会话 id 前缀 ses_; permission.asked 的 data 内联完整请求对象 |
-| 需要订阅的事件 | permission.asked, permission.replied, session.created, session.deleted, session.status, session.idle, form.created, form.replied, form.cancelled (tui.session.select 见 A4) |
+| 需要订阅的事件 | permission.asked, permission.replied, session.created, session.deleted, session.status, session.idle, session.execution.started/succeeded/failed/interrupted, form.created, form.replied, form.cancelled (tui.session.select 见 A4) |
 | 不存在的事件 | permission.updated, message.updated, question.* (V2 无) |
 | Permission.Request | {id(前缀 per), sessionID, action, resources[], save[], metadata, source{type,messageID,id}, message}, 必填 id/sessionID/action/resources |
 | 回审批 | POST /api/session/{sessionID}/permission/{requestID}/reply, body {"decision":"once"|"always"|"reject"}, 204 (实测方法 POST) |
@@ -47,7 +47,8 @@ Touch Bar 上增加一个 56pt 的 agent chip, 实时显示本机 opencode 后�
 | 会话状态 | Session.Info 无 status 字段; 迁移经 session.status 事件 (data.status.type = idle/busy/retry) |
 | V1 插件 | V1 实现在 V2 不运行 (migrate-v1 明示), 故 Openbar 的插件不可抄; 且 Openbar 为 GPL-3.0, ribbon 为 MIT, 代码不可搬 |
 | 布局常量 | fullWidth 1004, containerHeight 30, controlSize 24, chipWidth 56, chipMinWidth 40, clusterGap 8, appLabelMaxWidth 160, appLabelTrailingPriority 999; 右 cluster 约 225pt (以 dumpLayout 实测为准) |
-| 2.2.6 观察 | session.status 在生成期间不再发出 (45s 生成窗口 0 帧); busy 改为每 3s 轮询 GET /api/session/active 的 type=="running", session.status 事件仅作加速信号 |
+| 2.2.6 观察 | session.status 与 session.idle 在正常回合中均不再发出 (708 帧/2 回合样本, 0 帧; session.status 疑仅用于 provider retry); busy 边界迁到 session.execution.started/succeeded (+failed/interrupted), created 与 session.time.busy/idle 毫秒级对应; busy 计数以事件为主, 每 3s 轮询 /api/session/active 为兜底 |
+| 2.2.6 done 闪屏 | 绿色 done 三秒窗口在 2.2.6 由 session.execution.succeeded/failed/interrupted 触发 (任一结束态都算本回合结束); 2.1.x 仍由 session.idle / session.status idle 触发 |
 | service 重启实测 | 06:04:36 unavailable -> 06:04:37 重发现 version=2.2.6 新 pid -> chip 恢复, 1s |
 
 ## 4. 待验证假设 (spike 已完成, 2026-11-06)
@@ -58,7 +59,7 @@ Touch Bar 上增加一个 56pt 的 agent chip, 实时显示本机 opencode 后�
 | A2 | interrupt 端点 | 已验证 | POST /api/session/{sessionID}/interrupt |
 | A3 | 会话列表字段 | 已验证 | 列表项含 title 与 location.directory; 事件信封亦带 location.directory, 会话短名可零请求获得 |
 | A4 | tui.session.select payload | 未验证 | P4 期间实测; 失败则保持 P3 的 wezterm cli 启发式, 不阻塞 P0-P2; P4 已订阅该事件并容错解码, live payload 仍未观测到 |
-| A5 | form payload | 静态验证 | Form.Info = {id, sessionID, title, metadata, fields}; 卡片交互仍留 P4 实测 |
+| A5 | form payload | 已验证 (live 2.2.6) | form.created 的 data.form = {id, sessionID, title, fields[{key, title, type, options[{value, label}]}]} (信封另带 location.directory); 回表单 POST /api/session/{sessionID}/form/{formID}/reply, body {"answer":{<fieldKey>:<optionValue>}}, 204; form.replied 的 data = {id, sessionID, answer}; 挂起列表 GET /api/session/{sessionID}/form |
 | A6 | SSE 格式与 types 过滤 | 已验证 | text/event-stream; ?types= 在 2.1.4 被服务端忽略, 必须客户端本地过滤 |
 
 spike 全部结论已并入第 3 节。
@@ -132,8 +133,8 @@ wezterm cli activate-tab --tab-id T; activate-pane --pane-id P; NSRunningApplica
 ```
 
 - 第 1 格: basename(session.directory) 截断 + 队列位置 N/M。点它 = 跳转, 不决策。
-- 后 3 格: once / always / reject。点格即提交 (开卡是第一次确认, 点格是第二次)。
-- 卡在打开瞬间锁定 (sessionID, requestID); 若收到 permission.replied 且 id 匹配, 立即收卡, 不再发请求。
+- 后 3 格: 权限卡为 once / always / reject (允许/总是/拒绝); form 卡为选项标签 (最多 3 个, 尾部截断, label 为空时退化为 value), 少于 3 个选项的多余格隐藏。点格即提交 (开卡是第一次确认, 点格是第二次)。
+- 卡在打开瞬间锁定 (sessionID, requestID) 与答案类型: 权限卡锁 decision, form 卡锁 (fieldKey, option value); 若收到 permission.replied / form.replied 且 id 匹配, 立即收卡, 不再发请求。
 - 决策提交成功后: 卡关闭, chip 刷新, 若还有下一条需重新点 chip 打开 (不自动连开)。
 - 5s 无操作自动收回 (时长进 Theme.Timing)。
 - 排序: 待审批队列按事件信封 created 时间升序 (最老的先)。
@@ -200,7 +201,7 @@ struct AgentEvent: Equatable {
     let created: Date       // 信封 created, 毫秒 epoch
     let sessionID: String?
     let permissionID: String?
-    let statusType: String? // session.status 专用
+    let statusType: String? // session.status 原值; execution.* 由解码映射为 busy/idle
     // 保留原始 data 以便 reducer 取 action/resources/directory
 }
 
@@ -247,7 +248,7 @@ struct AgentSessionStore {
 
 要点:
 
-- reducer 规则: permission.asked 入队; permission.replied 按 requestID 出队; session.created/deleted 增删; session.status/idle 置忙闲; 短名在 created 与对账时补。 session.status(idle) 与 session.idle 均参与 done 计时; replaceAll(sessions:now:pendingIsAuthoritative:) 在非权威模式下保留存活会话的既有 pending。
+- reducer 规则: permission.asked 入队; permission.replied 按 requestID 出队; session.created/deleted 增删; session.status/idle (2.1.x) 与 session.execution.* (2.2.6, started->busy, succeeded/failed/interrupted->idle) 置忙闲, 任一结束态参与 done 计时; 短名在 created 与对账时补; replaceAll(sessions:now:pendingIsAuthoritative:) 在非权威模式下保留存活会话的既有 pending。
 - 对账: onResync -> activeSessionIDs + 会话列表 -> replaceAll。冷启动与每次重连都走同一条路。
 - 认证头由 endpoint 派生: Authorization: Basic base64("opencode:" + password), 不落日志不落盘。
 - AgentEvent 带 envelopeDirectory (来自信封 location.directory), 会话短名无需额外请求。
@@ -321,7 +322,7 @@ struct AgentSessionStore {
 ### P4 收尾
 
 - 中断手势 (依赖 A2): 无待审批且 busy 时长按 -> POST interrupt。
-- form 卡 (依赖 A5): 未随 P4 落地, 留待后续。
+- form 卡 (依赖 A5): 已落地 (LIVE payload 验证后补完)。可答条件: 表单恰好 1 个字段且该字段 options 为 2-3 项; 满足时 chip 点击开卡, 后 3 格显示选项标签, 点格 POST /api/session/{sessionID}/form/{formID}/reply body {"answer":{fieldKey:value}}; 成功收卡, 失败闪红并保持打开。不满足 (自由文本, >3 选项, 多字段) 仍为 jump-only, 点击跳到会话所在 pane。permission 队列仍优先于 form 队列。
 - tui.session.select 精确 pane 映射 (依赖 A4): 未随 P4 落地, 留待后续 (P4 只订阅并容错解码); 命中后替代 P3 的 cmdline 启发式, 启发式降为兜底。
 - 配置: JSONConfigStore 第三个实例 agent.json {enabled: true}, 关闭时槽位永久收起。
 - README 增补: 功能段 + 已知限制 (版本耦合 2.1.x, service.json 格式无稳定性承诺)。
@@ -354,7 +355,7 @@ struct AgentSessionStore {
 | SSE 心跳为 `: heartbeat` 注释行, 周期性确认: 心跳使连接长期保持, 故健康判定必须把任意活动(含心跳)计为 contact (2026-11-06 实机日志证实) | 任意行重置 60s 空闲计时, 超时重连 + 全量对账 |
 | 事件流含 session.text.delta 等高频帧 | 字节级预过滤, 未命中订阅类型不解码 |
 | service 重启换 url/password | ServiceLocator watch 父目录应对原子替换, 端点变更即重建 EventStream |
-| openapi 字段随版本漂移 | 解码容忍缺字段 (短名退 "?", metadata 只取已知键); 启动时 /api/info 的 version 写一条日志; busy 判定轮询 /api/session/active, 不依赖 session.status 事件 |
+| openapi 字段随版本漂移 | 解码容忍缺字段 (短名退 "?", metadata 只取已知键); 启动时 /api/info 的 version 写一条日志; busy 判定以 session.execution.started/succeeded/failed/interrupted 事件为主 (2.1.x 用 session.status / session.idle), 每 3s 轮询 /api/session/active 兜底 |
 | service.json 含明文密码 | 只读, 不复制, 不进日志与诊断输出; dumpLayout 类日志评审时确认 |
 | 多会话同 cwd 导致跳转歧义 | 可接受: 最坏跳到同仓库另一 pane, 决策与跳转已解耦 |
 | Touch Bar 误触 | 开卡 + 点格两次确认; 卡锁定 requestID; 5s 超时 |

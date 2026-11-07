@@ -51,21 +51,27 @@ A 2 pt line along the very bottom edge shows the selected input source.
 
 The 56 pt chip left of the right cluster mirrors the local opencode 2.1.x/2.2.x background service.
 Ribbon finds it through `~/.local/state/opencode/service.json`; nothing has to be installed besides
-opencode itself, and the chip asks for no macOS permissions. The busy count follows the service's
-own running-session set, polled every few seconds, because opencode 2.2.x stopped emitting
-per-execution status events.
+opencode itself, and the chip asks for no macOS permissions. Busy and idle follow the service's own
+turn boundaries: opencode 2.2.x sends `session.execution.started` and
+`session.execution.succeeded` / `.failed` / `.interrupted`, 2.1.x sends `session.status` and
+`session.idle`, so the chip flips the moment a turn starts or ends. A 3 s poll of the running-session
+set stays as the backstop after a reconnect.
 
 - Dim hollow dot: no session is running. Cyan border and a session-group count: sessions are busy
   (a subagent counts once, with the session that started it). Amber `!N`: a permission or form is
-  waiting. Green: everything just went idle, for three seconds.
+  waiting. Green: a turn just ended (whatever its outcome), for three seconds.
 - Tap while a permission waits: an approval card with the session name and its place in the queue,
   then `允许` / `总是` / `拒绝` (allow once / always / deny). The second tap submits, and the card
   closes by itself after five seconds.
-- Tap with nothing to approve: jump to the WezTerm pane hosting that session.
+- Tap with nothing to approve: jump to the WezTerm pane hosting that session. An answerable form (a
+  single question with two or three choices) opens the card instead, with its option labels in the
+  three cells.
 - Long-press (0.5 s) while a permission waits: skip to the next one. With nothing to approve, hold
   for 1.2 s to interrupt a session that is actually running; a waiting form does not block this.
-- A form cannot be answered from the bar: the chip shows amber and a tap jumps to the session that
-  is waiting for the answer.
+- A form with two or three choices on a single question can be answered from the bar: the card
+  shows the option labels, and a tap replies with that choice. Any other form (free text, more
+  choices, several questions) still needs the terminal, so the chip shows amber and a tap jumps to
+  its session.
 - `Agent Chip` in the menu-bar menu turns the chip off and on without a restart.
 
 ## Keyboard shortcuts

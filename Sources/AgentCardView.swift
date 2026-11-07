@@ -19,12 +19,44 @@ private final class AgentCardCellButton: NSButton {
     }
 }
 
-/// The 224x24 approval card: identity, allow, always, deny.
+/// The three action cells a card paints, derived from its locked target.
+///
+/// Pure, so the label rule is testable without AppKit: a permission shows
+/// 允许/总是/拒绝, an answerable form shows up to three option labels (the raw
+/// value stands in for a missing label) and hides the cells it does not need.
+struct AgentCardActionCells: Equatable {
+    /// The permission cells, left to right.
+    static let permissionTitles = ["允许", "总是", "拒绝"]
+
+    /// Titles left to right; always three entries, empty past `count`.
+    let titles: [String]
+    /// How many of the three cells are shown (3 for a permission).
+    let count: Int
+
+    static func cells(for target: AgentCardTarget) -> AgentCardActionCells {
+        guard target.isForm else {
+            return AgentCardActionCells(titles: permissionTitles, count: permissionTitles.count)
+        }
+        let shown = min(target.options.count, permissionTitles.count)
+        var titles = Array(repeating: "", count: permissionTitles.count)
+        for index in 0..<shown {
+            let option = target.options[index]
+            titles[index] = option.label.isEmpty ? option.value : option.label
+        }
+        return AgentCardActionCells(titles: titles, count: shown)
+    }
+}
+
+/// The 224x24 card: identity plus three action cells.
 ///
 /// It only renders. The controller owns the machine, the timeout tick and the
 /// reply call; the four cells report taps through closures. Everything is a
 /// plain layer/button change so the Touch Bar's remote rendering never has to
 /// animate a window or popover.
+///
+/// The action cells are double duty: for a permission they are the three
+/// decisions, for an answerable form they are the option labels. The target the
+/// machine locked says which, so a tap always reports the answer the user saw.
 final class AgentCardView: NSView {
     /// The card covers four chip-width cells and grows left from the chip's
     /// right edge, so it never changes the bar's layout outside its own frame.
@@ -32,15 +64,20 @@ final class AgentCardView: NSView {
 
     /// Tapped the identity cell (jump).
     var onIdentityTap: (() -> Void)?
-    /// Tapped one of the three decision cells.
+    /// Tapped one of the three decision cells on a permission card.
     var onDecision: ((AgentDecision) -> Void)?
+    /// Tapped one of the option cells on a form card; the value goes on the wire.
+    var onOption: ((String) -> Void)?
 
     private let identityButton = AgentCardCellButton()
-    private let allowButton = AgentCardCellButton()
-    private let alwaysButton = AgentCardCellButton()
-    private let rejectButton = AgentCardCellButton()
+    private let actionOne = AgentCardCellButton()
+    private let actionTwo = AgentCardCellButton()
+    private let actionThree = AgentCardCellButton()
     /// The phase currently painted, so the 10 Hz tick repaints nothing.
     private var rendered: AgentCardMachine.Phase?
+    /// The target currently painted; nil while closed. Taps read this so they
+    /// answer the target the user is looking at, not a re-derived one.
+    private var currentTarget: AgentCardTarget?
 
     /// Red used for the failed-reply flash; the palette's red entry.
     private static let errorBorder: UInt32 = 0xffff757f
@@ -57,18 +94,9 @@ final class AgentCardView: NSView {
         layer?.masksToBounds = true
 
         configure(identityButton, fill: Theme.agentWaitFill, action: #selector(identityTapped))
-        configure(allowButton, fill: Theme.controlBackground, action: #selector(allowTapped))
-        configure(alwaysButton, fill: Theme.controlBackground, action: #selector(alwaysTapped))
-        configure(rejectButton, fill: Theme.controlBackground, action: #selector(rejectTapped))
-
-        identityButton.setAccessibilityLabel("Session")
-        allowButton.setAccessibilityLabel("Allow once")
-        alwaysButton.setAccessibilityLabel("Always allow")
-        rejectButton.setAccessibilityLabel("Deny")
-
-        applyCellTitle(allowButton, "允许", color: Theme.primaryText)
-        applyCellTitle(alwaysButton, "总是", color: Theme.primaryText)
-        applyCellTitle(rejectButton, "拒绝", color: Theme.primaryText)
+        configure(actionOne, fill: Theme.controlBackground, action: #selector(allowTapped))
+        configure(actionTwo, fill: Theme.controlBackground, action: #selector(alwaysTapped))
+        configure(actionThree, fill: Theme.controlBackground, action: #selector(rejectTapped))
 
         NSLayoutConstraint.activate([
             identityButton.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -76,21 +104,21 @@ final class AgentCardView: NSView {
             identityButton.bottomAnchor.constraint(equalTo: bottomAnchor),
             identityButton.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
 
-            allowButton.leadingAnchor.constraint(equalTo: identityButton.trailingAnchor),
-            allowButton.topAnchor.constraint(equalTo: topAnchor),
-            allowButton.bottomAnchor.constraint(equalTo: bottomAnchor),
-            allowButton.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
+            actionOne.leadingAnchor.constraint(equalTo: identityButton.trailingAnchor),
+            actionOne.topAnchor.constraint(equalTo: topAnchor),
+            actionOne.bottomAnchor.constraint(equalTo: bottomAnchor),
+            actionOne.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
 
-            alwaysButton.leadingAnchor.constraint(equalTo: allowButton.trailingAnchor),
-            alwaysButton.topAnchor.constraint(equalTo: topAnchor),
-            alwaysButton.bottomAnchor.constraint(equalTo: bottomAnchor),
-            alwaysButton.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
+            actionTwo.leadingAnchor.constraint(equalTo: actionOne.trailingAnchor),
+            actionTwo.topAnchor.constraint(equalTo: topAnchor),
+            actionTwo.bottomAnchor.constraint(equalTo: bottomAnchor),
+            actionTwo.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
 
-            rejectButton.leadingAnchor.constraint(equalTo: alwaysButton.trailingAnchor),
-            rejectButton.trailingAnchor.constraint(equalTo: trailingAnchor),
-            rejectButton.topAnchor.constraint(equalTo: topAnchor),
-            rejectButton.bottomAnchor.constraint(equalTo: bottomAnchor),
-            rejectButton.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
+            actionThree.leadingAnchor.constraint(equalTo: actionTwo.trailingAnchor),
+            actionThree.trailingAnchor.constraint(equalTo: trailingAnchor),
+            actionThree.topAnchor.constraint(equalTo: topAnchor),
+            actionThree.bottomAnchor.constraint(equalTo: bottomAnchor),
+            actionThree.widthAnchor.constraint(equalToConstant: Theme.Layout.chipWidth),
         ])
 
         isHidden = true
@@ -103,29 +131,33 @@ final class AgentCardView: NSView {
 
         switch phase {
         case .closed:
+            currentTarget = nil
             isHidden = true
             alphaValue = 1
             return
         case .open(let target, _):
+            currentTarget = target
             isHidden = false
             alphaValue = 1
-            setCellsEnabled(true)
             layer?.borderColor = NSColor(argb: Theme.agentWaitBorder).cgColor
             applyIdentity(target)
+            applyActionCells(target, enabled: true)
         case .submitting(let target, _):
+            currentTarget = target
             isHidden = false
             // The card is in flight: dim it and take every tap away so a second
-            // decision cannot race the first.
+            // answer cannot race the first.
             alphaValue = 0.6
-            setCellsEnabled(false)
             layer?.borderColor = NSColor(argb: Theme.agentWaitBorder).cgColor
             applyIdentity(target)
+            applyActionCells(target, enabled: false)
         case .failed(let target, _, _):
+            currentTarget = target
             isHidden = false
             alphaValue = 0.6
-            setCellsEnabled(false)
             layer?.borderColor = NSColor(argb: Self.errorBorder).cgColor
             applyIdentity(target)
+            applyActionCells(target, enabled: false)
         }
     }
 
@@ -140,7 +172,8 @@ final class AgentCardView: NSView {
         button.isBordered = false
         button.refusesFirstResponder = true
         button.focusRingType = .none
-        // A single line that truncates instead of widening the cell.
+        // A single line that truncates instead of widening the cell. Form
+        // option labels are short; the tail is what gets dropped.
         button.cell?.wraps = false
         button.cell?.truncatesLastVisibleLine = true
         button.lineBreakMode = .byTruncatingTail
@@ -154,6 +187,7 @@ final class AgentCardView: NSView {
             .font: NSFont.systemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium),
             .foregroundColor: NSColor(argb: color),
         ])
+        button.setAccessibilityLabel(text)
     }
 
     private func applyIdentity(_ target: AgentCardTarget) {
@@ -163,12 +197,26 @@ final class AgentCardView: NSView {
                                                    weight: .medium),
             .foregroundColor: NSColor(argb: Theme.focusedChipText),
         ])
+        identityButton.setAccessibilityLabel("Session")
     }
 
-    private func setCellsEnabled(_ enabled: Bool) {
-        for button in [identityButton, allowButton, alwaysButton, rejectButton] {
-            button.isEnabled = enabled
+    /// Paints the three action cells for `target` and gates their taps.
+    ///
+    /// A form with fewer than three options hides the surplus cells; they keep
+    /// their constraints so the identity cell and the card width never move.
+    private func applyActionCells(_ target: AgentCardTarget, enabled: Bool) {
+        let cells = AgentCardActionCells.cells(for: target)
+        for (index, button) in actionButtons.enumerated() {
+            let shown = index < cells.count
+            button.isHidden = !shown
+            button.isEnabled = enabled && shown
+            applyCellTitle(button, cells.titles[index], color: Theme.primaryText)
         }
+        identityButton.isEnabled = enabled
+    }
+
+    private var actionButtons: [AgentCardCellButton] {
+        [actionOne, actionTwo, actionThree]
     }
 
     // MARK: - Taps
@@ -178,15 +226,28 @@ final class AgentCardView: NSView {
     }
 
     @objc private func allowTapped() {
-        onDecision?(.once)
+        actionCellTapped(0, decision: .once)
     }
 
     @objc private func alwaysTapped() {
-        onDecision?(.always)
+        actionCellTapped(1, decision: .always)
     }
 
     @objc private func rejectTapped() {
-        onDecision?(.reject)
+        actionCellTapped(2, decision: .reject)
+    }
+
+    /// Reports the tapped cell as whatever this card is: an option value for a
+    /// form, a decision for a permission.
+    private func actionCellTapped(_ index: Int, decision: AgentDecision) {
+        guard let target = currentTarget,
+              index < AgentCardActionCells.cells(for: target).count else { return }
+        if target.isForm {
+            guard index < target.options.count else { return }
+            onOption?(target.options[index].value)
+        } else {
+            onDecision?(decision)
+        }
     }
 
     required init?(coder: NSCoder) {
