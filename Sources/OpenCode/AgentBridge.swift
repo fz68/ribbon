@@ -15,6 +15,13 @@ struct AgentSnapshot: Equatable {
     /// store has no sessions. The card path supplies its own locked target, so
     /// this never carries a permission request.
     let jump: AgentJumpTarget?
+    /// The newest session with any pending request (a form holder when the
+    /// permission triage is empty). A chip tap while a form waits uses this so
+    /// the jump lands on the session that is waiting for the answer.
+    let pendingJump: AgentJumpTarget?
+    /// The newest busy session: the only valid interrupt victim. A session that
+    /// merely waits on a form is never here.
+    let interrupt: AgentJumpTarget?
 }
 
 /// Owns the opencode connection for the agent chip.
@@ -128,7 +135,7 @@ final class AgentBridge: @unchecked Sendable {
             self.lastContact = nil
             self.store = AgentSessionStore()
             self.reconcileGeneration += 1
-            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: [], jump: nil))
+            self.onUpdate?(AgentSnapshot(chip: .off, visible: false, triage: [], jump: nil, pendingJump: nil, interrupt: nil))
         }
     }
 
@@ -170,6 +177,26 @@ final class AgentBridge: @unchecked Sendable {
                     succeeded = false
                 }
                 queue.async { result.run(succeeded) }
+            }
+        }
+    }
+
+    /// Interrupts a busy session. Fire and forget: the chip only needs the
+    /// request sent, and a failure is logged without blocking the UI.
+    func interrupt(sessionID: String) {
+        let prefix = String(sessionID.prefix(8))
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard let client = self.client else {
+                log("agent interrupt \(prefix) failed: no service")
+                return
+            }
+            Task {
+                do {
+                    try await client.interrupt(sessionID: sessionID)
+                } catch {
+                    log("agent interrupt \(prefix) failed")
+                }
             }
         }
     }
@@ -308,7 +335,9 @@ final class AgentBridge: @unchecked Sendable {
                                                lastContact: lastContact,
                                                now: now),
             triage: store.triageList,
-            jump: store.jumpTarget
+            jump: store.jumpTarget,
+            pendingJump: store.pendingJumpTarget,
+            interrupt: store.interruptTarget
         )
         onUpdate?(snapshot)
     }

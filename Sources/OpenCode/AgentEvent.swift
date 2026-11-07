@@ -90,7 +90,19 @@ extension AgentEvent {
             permissionID = nil
             statusType = nil
         case "form.created", "form.replied", "form.cancelled":
+            // The nested `form` object is expected from the static schema; the
+            // flat shape is tolerated as a fallback. The live form event itself
+            // is still unverified (A5).
+            let form = data["form"] as? [String: Any]
+            sessionID = data["sessionID"] as? String ?? form?["sessionID"] as? String
+            permissionID = nil
+            statusType = nil
+        case "tui.session.select":
+            // Payload unobserved. `id` is accepted only when it looks like a
+            // session id; an evt_ id must not create a phantom session.
+            let rawID = data["id"] as? String
             sessionID = data["sessionID"] as? String
+                ?? (rawID?.hasPrefix("ses_") == true ? rawID : nil)
             permissionID = nil
             statusType = nil
         default:

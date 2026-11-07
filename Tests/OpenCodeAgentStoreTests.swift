@@ -321,7 +321,93 @@ private func at(_ seconds: TimeInterval) -> Date {
                 "the newest session wins when nothing is busy")
         #expect(idleStore.jumpTarget?.directory == "/x/b")
 
+        // A pending form outranks a newer idle session; busy outranks both.
+        var pendingStore = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/form",
+                  to: &pendingStore, data: ["sessionID": "ses_form"])
+        try apply("form.created", at: 1, to: &pendingStore,
+                  data: ["sessionID": "ses_form", "id": "frm_1", "title": "Pick"])
+        try apply("session.created", at: 2, directory: "/x/idle",
+                  to: &pendingStore, data: ["sessionID": "ses_idle"])
+        #expect(pendingStore.jumpTarget?.sessionID == "ses_form",
+                "a pending form outranks a newer idle session")
+
+        try apply("session.created", at: 3, directory: "/x/busy",
+                  to: &pendingStore, data: ["sessionID": "ses_busy"])
+        try apply("session.status", at: 3, to: &pendingStore,
+                  data: ["sessionID": "ses_busy", "status": ["type": "busy"]])
+        #expect(pendingStore.jumpTarget?.sessionID == "ses_busy",
+                "busy outranks a pending form")
+
         #expect(AgentSessionStore().jumpTarget == nil, "an empty store has nowhere to jump")
+    }
+
+    @Test func testNestedFormPayloadQueuesAForm() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/tmp",
+                  to: &store, data: ["sessionID": "ses_1"])
+        try apply("form.created", at: 2, to: &store,
+                  data: ["form": ["id": "frm_1", "sessionID": "ses_1", "title": "Questions"]])
+
+        #expect(store.triageCount == 1, "the live nested payload queues the form")
+        #expect(store.triageHead?.request.kind == .form, "it is a form pending")
+        #expect(store.triageHead?.request.action == "Questions", "the form title is the label")
+        #expect(store.chip(now: at(2)) == .awaiting(count: 1))
+        #expect(store.jumpTarget?.sessionID == "ses_1",
+                "a form-only pending is a jump tier even while the session is idle")
+
+        try apply("form.cancelled", at: 3, to: &store,
+                  data: ["form": ["id": "frm_1", "sessionID": "ses_1"]])
+        #expect(store.triageCount == 0, "a nested cancel removes the form")
+    }
+
+    @Test func testSessionSelectMarksTheSessionSeen() throws {
+        var store = AgentSessionStore()
+        try apply("tui.session.select", at: 5, directory: "/x/api",
+                  to: &store, data: ["sessionID": "ses_1"])
+
+        #expect(store.sessions["ses_1"]?.lastSeen == at(5),
+                "the event creates the session and stamps its arrival time")
+        #expect(store.sessions["ses_1"]?.shortName == "api",
+                "the directory gives the session its name")
+    }
+
+    @Test func testSessionSelectIgnoresNonSessionIDs() throws {
+        var store = AgentSessionStore()
+        try apply("tui.session.select", at: 1, to: &store, data: ["id": "evt_123"])
+        #expect(store.sessions.isEmpty,
+                "an envelope id must not create a phantom session")
+
+        try apply("tui.session.select", at: 2, to: &store, data: ["id": "ses_real"])
+        #expect(store.sessions["ses_real"] != nil, "a ses_ id is accepted")
+        #expect(store.sessions["ses_real"]?.lastSeen == at(2))
+    }
+
+    @Test func testInterruptTargetIsOnlyTheNewestBusySession() throws {
+        var store = AgentSessionStore()
+        try apply("session.created", at: 1, directory: "/x/form",
+                  to: &store, data: ["sessionID": "ses_form"])
+        try apply("form.created", at: 1, to: &store,
+                  data: ["sessionID": "ses_form", "id": "frm_1", "title": "Pick"])
+
+        #expect(store.interruptTarget == nil,
+                "a form holder is never an interrupt victim")
+        #expect(store.pendingJumpTarget?.sessionID == "ses_form",
+                "but it is the pending jump target")
+
+        try apply("session.created", at: 2, directory: "/x/busy",
+                  to: &store, data: ["sessionID": "ses_busy"])
+        try apply("session.status", at: 2, to: &store,
+                  data: ["sessionID": "ses_busy", "status": ["type": "busy"]])
+        #expect(store.interruptTarget?.sessionID == "ses_busy",
+                "the busy session is the interrupt victim")
+
+        try apply("session.created", at: 3, directory: "/x/busy2",
+                  to: &store, data: ["sessionID": "ses_busy2"])
+        try apply("session.status", at: 3, to: &store,
+                  data: ["sessionID": "ses_busy2", "status": ["type": "busy"]])
+        #expect(store.interruptTarget?.sessionID == "ses_busy2",
+                "the newest busy session wins")
     }
 
     @Test func testReplaceAllKeepsLastSeenForKnownSessions() throws {

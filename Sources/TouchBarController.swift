@@ -239,8 +239,11 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     }
 
     /// A bar dismissed mid-press never sees the release, so a button can be left
-    /// in its pressed colour. Reset every pill before the bar goes away.
+    /// in its pressed colour. Reset every pill before the bar goes away, and
+    /// abort any agent-chip press so its long-press timer cannot fire after the
+    /// bar is gone.
     func resetPressedAppearances() {
+        agentChip.cancelPress()
         for button in [mediaPrevButton, mediaPlayPauseButton, mediaNextButton,
                        brightnessDownButton, brightnessUpButton,
                        volumeDownButton, volumeUpButton, controlStripButton] {

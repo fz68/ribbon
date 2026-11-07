@@ -140,6 +140,12 @@ struct OpenCodeClient {
         }
     }
 
+    /// POST `/api/session/{sessionID}/interrupt` with no body.
+    func interrupt(sessionID: String) async throws {
+        let path = "api/session/\(Self.encodePathComponent(sessionID))/interrupt"
+        _ = try await send("POST", path)
+    }
+
     /// Decodes a response that is either a bare array of objects or `{"data": [...]}`.
     private static func dataEntries(from data: Data) throws -> [[String: Any]] {
         guard let object = try? JSONSerialization.jsonObject(with: data) else {

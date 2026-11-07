@@ -119,6 +119,7 @@ final class EventStream {
         "form.created",
         "form.replied",
         "form.cancelled",
+        "tui.session.select",
     ]
 
     private static let serverConnectedMarker = "\"type\":\"server.connected\""

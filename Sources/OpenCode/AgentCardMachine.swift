@@ -61,6 +61,22 @@ struct AgentCardMachine {
         }
     }
 
+    /// The index the card should show after a long-press skip.
+    ///
+    /// One past the current request. nil when there is nothing to advance to: an
+    /// empty queue, a card already on the last request (re-opening it would just
+    /// restart the timeout), or a locked request that vanished from the queue
+    /// (the race-close path owns that cleanup). A closed card starts at the head.
+    static func nextIndex(after requestID: String?, in triage: [AgentCardTarget]) -> Int? {
+        guard !triage.isEmpty else { return nil }
+        guard let requestID else { return 0 }
+        guard let index = triage.firstIndex(where: { $0.requestID == requestID }),
+              index < triage.count - 1 else {
+            return nil
+        }
+        return index + 1
+    }
+
     /// Opens the card on `target`. Returns false when a card is already showing.
     mutating func open(target: AgentCardTarget, now: Date) -> Bool {
         guard case .closed = phase else { return false }

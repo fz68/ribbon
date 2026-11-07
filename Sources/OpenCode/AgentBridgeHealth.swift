@@ -18,4 +18,12 @@ enum AgentBridgeHealth {
         guard exists, let lastContact else { return false }
         return now.timeIntervalSince(lastContact) < Theme.Timing.agentContactWindow
     }
+
+    /// The user's menu switch AND the bridge's own health.
+    ///
+    /// The controller applies this where it decides visibility, so a disabled
+    /// chip stays collapsed even if a stale snapshot arrives.
+    static func visible(enabled: Bool, bridgeVisible: Bool) -> Bool {
+        enabled && bridgeVisible
+    }
 }

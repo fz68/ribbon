@@ -3,7 +3,7 @@
 日期: 2026-11-06
 仓库: ribbon (本仓库)
 目标版本: opencode 2.1.x (本机实测 2.1.4)
-状态: 设计已定稿; spike A1/A2/A3/A5/A6 已完成 (A4 留待 P3), 可进入 P0 编码
+状态: P0-P4 已落地 (form 卡与 tui.session.select 精确 pane 映射两项延后, 未随 P4 落地); spike A1/A2/A3/A5/A6 已完成, A4 仍未观测
 
 ## 1. 目标
 
@@ -55,7 +55,7 @@ Touch Bar 上增加一个 56pt 的 agent chip, 实时显示本机 opencode 后�
 | A1 | 认证头 | 已验证 | HTTP Basic, 用户名固定 opencode, 密码为 service.json 的 password |
 | A2 | interrupt 端点 | 已验证 | POST /api/session/{sessionID}/interrupt |
 | A3 | 会话列表字段 | 已验证 | 列表项含 title 与 location.directory; 事件信封亦带 location.directory, 会话短名可零请求获得 |
-| A4 | tui.session.select payload | 未验证 | P4 期间实测; 失败则保持 P3 的 wezterm cli 启发式, 不阻塞 P0-P2 |
+| A4 | tui.session.select payload | 未验证 | P4 期间实测; 失败则保持 P3 的 wezterm cli 启发式, 不阻塞 P0-P2; P4 已订阅该事件并容错解码, live payload 仍未观测到 |
 | A5 | form payload | 静态验证 | Form.Info = {id, sessionID, title, metadata, fields}; 卡片交互仍留 P4 实测 |
 | A6 | SSE 格式与 types 过滤 | 已验证 | text/event-stream; ?types= 在 2.1.4 被服务端忽略, 必须客户端本地过滤 |
 
@@ -142,7 +142,7 @@ wezterm cli activate-tab --tab-id T; activate-pane --pane-id P; NSRunningApplica
 | 手势 | 有待审批时 | 无待审批时 |
 |---|---|---|
 | 点 chip | 开卡 | 跳到最近有活动的会话所在 pane |
-| 长按 chip (约 500ms, 阈值进 Theme.Timing) | 跳过当前条目看下一条, 不决策 | 中断当前展示的 busy 会话 (依赖 A2) |
+| 长按 chip (有待审批 500ms; 无待审批 1.2s) | 跳过当前条目看下一条, 不决策 | 中断当前展示的 busy 会话 (依赖 A2) |
 | 点卡第 1 格 | 跳转, 卡收回 | - |
 
 ### 6.5 strip 模式 (680pt)
@@ -319,8 +319,8 @@ struct AgentSessionStore {
 ### P4 收尾
 
 - 中断手势 (依赖 A2): 无待审批且 busy 时长按 -> POST interrupt。
-- form 卡 (依赖 A5)。
-- tui.session.select 精确 pane 映射 (依赖 A4): 命中则替代 P3 的 cmdline 启发式, 启发式降为兜底。
+- form 卡 (依赖 A5): 未随 P4 落地, 留待后续。
+- tui.session.select 精确 pane 映射 (依赖 A4): 未随 P4 落地, 留待后续 (P4 只订阅并容错解码); 命中后替代 P3 的 cmdline 启发式, 启发式降为兜底。
 - 配置: JSONConfigStore 第三个实例 agent.json {enabled: true}, 关闭时槽位永久收起。
 - README 增补: 功能段 + 已知限制 (版本耦合 2.1.x, service.json 格式无稳定性承诺)。
 

@@ -8,6 +8,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var imeColorItem: NSMenuItem?
     private var imeLinePositionItem: NSMenuItem?
     private var clockFormatItem: NSMenuItem?
+    private var agentChipItem: NSMenuItem?
 
     /// The clock formats offered by the "Clock Format" submenu.
     private static let clockFormatPresets: [(format: String, locale: String)] = [
@@ -54,6 +55,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(strip)
         controlStripItem = strip
         menu.addItem(NSMenuItem(title: "Set App+ControlStrip mode", action: #selector(setAppWithControlStripMode), keyEquivalent: ""))
+
+        // The OpenCode agent chip switch. A checkmark item, like the Control
+        // Strip title, reflects the live state and takes effect without a restart.
+        let agentChip = NSMenuItem(title: "Agent Chip", action: #selector(toggleAgentChip), keyEquivalent: "")
+        agentChip.state = AgentConfig.isEnabled ? .on : .off
+        menu.addItem(agentChip)
+        agentChipItem = agentChip
 
         // Read-out of the selected keyboard input source.
         let inputSource = NSMenuItem(title: "Input Source: -", action: nil, keyEquivalent: "")
@@ -224,6 +232,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleControlStrip() {
         controller.toggleControlStrip()
+    }
+
+    /// Flips the agent chip switch, persists it, and applies it live.
+    @objc private func toggleAgentChip() {
+        let enabled = !AgentConfig.isEnabled
+        guard AgentConfig.setEnabled(enabled) else {
+            log("agent chip config write failed")
+            return
+        }
+        agentChipItem?.state = enabled ? .on : .off
+        controller.applyAgentEnabled(enabled)
+        log("agent chip enabled=\(enabled ? 1 : 0)")
     }
 
     @objc private func setAppWithControlStripMode() {

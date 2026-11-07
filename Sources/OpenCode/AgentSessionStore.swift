@@ -123,17 +123,27 @@ struct AgentSessionStore {
             // store has already reconciled away, and the id is globally unique.
             removePending(id: event.permissionID)
         case "form.created":
-            guard let id = event.sessionID, let formID = event.data["id"] as? String else { return }
+            guard let id = event.sessionID,
+                  let formID = Self.formID(from: event.data) else { return }
             ensureSession(id: id, directory: event.directory, now: now)
+            let form = event.data["form"] as? [String: Any]
             addPending(PendingRequest(id: formID,
                                      kind: .form,
-                                     action: event.data["action"] as? String
+                                     action: form?["title"] as? String
+                                         ?? event.data["action"] as? String
                                          ?? event.data["title"] as? String ?? "",
                                      resources: event.data["resources"] as? [String] ?? [],
                                      requestedAt: event.created),
                        to: id, now: now)
         case "form.replied", "form.cancelled":
-            removePending(id: event.data["id"] as? String)
+            removePending(id: Self.formID(from: event.data))
+        case "tui.session.select":
+            // Only the arrival time matters today; the payload is tolerated in
+            // case it starts carrying more (A4 remains unobserved live). Such
+            // entries are pruned by the next replaceAll, so these events cannot
+            // grow the store without bound.
+            guard let id = event.sessionID else { return }
+            ensureSession(id: id, directory: event.directory, now: now)
         default:
             break
         }
@@ -260,23 +270,53 @@ struct AgentSessionStore {
 
     /// The session a chip tap jumps to when nothing is pending.
     ///
-    /// The most recently touched busy session wins; when nothing is busy, the
-    /// most recently touched session. The card path carries its own locked
-    /// target, so this is only consulted with an empty permission triage and the
-    /// result has no request attached. Equal `lastSeen` values (one event batch)
-    /// go to the lower session id so the answer is deterministic.
+    /// Tiers: the most recently touched busy session, else the most recently
+    /// touched session with a pending request (a form, since the card owns
+    /// permissions), else the most recently touched session. The card path
+    /// carries its own locked target, so this is only consulted with an empty
+    /// permission triage and the result has no request attached. Equal `lastSeen`
+    /// values (one event batch) go to the lower session id for determinism.
     var jumpTarget: AgentJumpTarget? {
         let busy = sessions.values.filter(\.isBusy)
-        let candidates = busy.isEmpty ? Array(sessions.values) : busy
-        guard let session = candidates.max(by: { lhs, rhs in
+        let pending = sessions.values.filter { !$0.pending.isEmpty }
+        let candidates: [AgentSession]
+        if !busy.isEmpty {
+            candidates = Array(busy)
+        } else if !pending.isEmpty {
+            candidates = Array(pending)
+        } else {
+            candidates = Array(sessions.values)
+        }
+        return Self.newest(candidates).map(Self.target(for:))
+    }
+
+    /// The newest busy session, the only valid interrupt victim.
+    ///
+    /// A session that merely waits for the user (a form holder) is never busy in
+    /// the sense that matters here: interrupting it would throw the form away.
+    var interruptTarget: AgentJumpTarget? {
+        Self.newest(sessions.values.filter(\.isBusy)).map(Self.target(for:))
+    }
+
+    /// The newest session with any pending request.
+    ///
+    /// Used by a chip tap while a form waits: the form cannot be answered from
+    /// the bar, so the tap jumps to the session holding it.
+    var pendingJumpTarget: AgentJumpTarget? {
+        Self.newest(sessions.values.filter { !$0.pending.isEmpty }).map(Self.target(for:))
+    }
+
+    private static func newest(_ sessions: [AgentSession]) -> AgentSession? {
+        sessions.max(by: { lhs, rhs in
             if lhs.lastSeen != rhs.lastSeen { return lhs.lastSeen < rhs.lastSeen }
             return lhs.id > rhs.id
-        }) else {
-            return nil
-        }
-        return AgentJumpTarget(sessionID: session.id,
-                               shortName: session.shortName,
-                               directory: session.directory ?? "")
+        })
+    }
+
+    private static func target(for session: AgentSession) -> AgentJumpTarget {
+        AgentJumpTarget(sessionID: session.id,
+                        shortName: session.shortName,
+                        directory: session.directory ?? "")
     }
 
     // MARK: - Helpers
@@ -290,6 +330,14 @@ struct AgentSessionStore {
             return session.id < otherSession.id
         }
         return request.id < other.id
+    }
+
+    /// The form id from the live nested payload (`data.form.id`) or the older
+    /// flat one (`data.id` / `data.formID`).
+    private static func formID(from data: [String: Any]) -> String? {
+        if let id = data["id"] as? String { return id }
+        if let form = data["form"] as? [String: Any] { return form["id"] as? String }
+        return data["formID"] as? String
     }
 
     /// `basename` of a session directory, nil when there is none to show.

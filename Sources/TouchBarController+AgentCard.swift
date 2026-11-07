@@ -27,6 +27,9 @@ extension TouchBarController {
         agentChip.onTap = { [weak self] in
             self?.handleAgentChipTap()
         }
+        agentChip.onLongPress = { [weak self] in
+            self?.handleAgentChipLongPress()
+        }
         agentCard.onIdentityTap = { [weak self] in
             // The identity cell jumps to the pane hosting the locked session,
             // then closes the card.
@@ -42,11 +45,21 @@ extension TouchBarController {
     /// First tap: lock the oldest pending permission and show the card; with
     /// nothing pending, jump to the session that needs attention instead.
     func handleAgentChipTap() {
-        guard let snapshot = agentSnapshot, snapshot.visible else { return }
+        // Effective visibility: the menu switch can hide the chip while the
+        // bridge still publishes a healthy snapshot.
+        guard agentVisible, let snapshot = agentSnapshot else { return }
         guard case .closed = agentCardMachine.phase else { return }
         guard let target = snapshot.triage.first else {
-            // Nothing to approve: the tap jumps to the most relevant session.
-            if let jump = snapshot.jump { jumpToAgentTarget(jump) }
+            // Nothing to approve. A waiting form cannot be answered from the
+            // bar, so the tap lands on the session holding it; otherwise the
+            // usual most-relevant-session jump.
+            let jump: AgentJumpTarget?
+            if case .awaiting = snapshot.chip {
+                jump = snapshot.pendingJump ?? snapshot.jump
+            } else {
+                jump = snapshot.jump
+            }
+            if let jump { jumpToAgentTarget(jump) }
             return
         }
         guard agentCardMachine.open(target: target, now: Date()) else { return }
@@ -99,8 +112,11 @@ extension TouchBarController {
     // MARK: - Snapshots
 
     /// Reconciles the card with one bridge snapshot.
-    func syncAgentCard(with snapshot: AgentSnapshot) {
-        guard snapshot.visible else {
+    ///
+    /// `visible` is the effective chip visibility (menu switch AND bridge
+    /// health), so disabling the chip also dismisses an open card.
+    func syncAgentCard(with snapshot: AgentSnapshot, visible: Bool) {
+        guard visible else {
             // The bridge is gone: a permission cannot be answered any more.
             if agentCardMachine.dismiss(now: Date()) {
                 log("agent card hidden")
@@ -185,6 +201,44 @@ extension TouchBarController {
                 log("agent jump open failed: \(error.localizedDescription)")
             }
         }
+    }
+
+    // MARK: - Long press
+
+    /// Long press: skip to the next pending permission, or interrupt the busy
+    /// session when nothing is waiting for approval.
+    func handleAgentChipLongPress() {
+        // A press can outlive the bar (dismissal cancels the chip's timer, but a
+        // stray callback must still not interrupt anything).
+        guard !didShutdown, container.window != nil else { return }
+        guard agentVisible, let snapshot = agentSnapshot else { return }
+        if !snapshot.triage.isEmpty {
+            advanceAgentCard()
+            return
+        }
+        // Interrupt never targets a form holder: the target is the newest BUSY
+        // session, so with only a form waiting this is a no-op.
+        guard let target = snapshot.interrupt else { return }
+        log("agent interrupt \(target.sessionID.prefix(8))")
+        agentBridge?.interrupt(sessionID: target.sessionID)
+    }
+
+    /// Moves the card to the next request and restarts its timeout.
+    ///
+    /// The card is re-opened rather than mutated: `open` creates a fresh
+    /// `openedAt`, which is what resets the five second window. A submit in
+    /// flight is left alone.
+    func advanceAgentCard() {
+        guard let snapshot = agentSnapshot else { return }
+        if case .submitting = agentCardMachine.phase { return }
+        guard let index = AgentCardMachine.nextIndex(after: agentCardMachine.target?.requestID,
+                                                     in: snapshot.triage) else { return }
+        let next = snapshot.triage[index]
+        _ = agentCardMachine.dismiss(now: Date())
+        guard agentCardMachine.open(target: next, now: Date()) else { return }
+        log("agent card open \(next.shortName) \(next.position)/\(next.total)")
+        renderAgentCard()
+        startAgentCardTimer()
     }
 
     // MARK: - Tick and dismissal

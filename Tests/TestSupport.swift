@@ -4,6 +4,10 @@ import Testing
 
 /// One-time bootstrap for the whole test run. The static initializer runs
 /// exactly once per process, before the first test touches any path.
+///
+/// The redirects are process-global. A suite that uses `AgentConfig` (or any
+/// other redirected path) must touch `TestBootstrap.tempRoot` in its `init` so
+/// this bootstrap has run first.
 enum TestBootstrap {
     static let tempRoot: String = {
         let root = TestTemp.makeRoot()
@@ -11,6 +15,7 @@ enum TestBootstrap {
         Log.path = TestTemp.path("ribbon.log")
         InputSource.configurationPath = TestTemp.path("ime.json")
         TimeFormat.configurationPath = TestTemp.path("clock.json")
+        AgentConfig.configurationPath = TestTemp.path("agent.json")
         return root
     }()
 }

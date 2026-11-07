@@ -184,6 +184,27 @@ private func cardTarget(_ requestID: String = "per_1",
         #expect(machine.phase == .closed, "a closed card cannot enter the failed phase")
     }
 
+    @Test func testNextIndexAdvancesAndClamps() {
+        let first = cardTarget("per_1", position: 1, total: 3)
+        let second = cardTarget("per_2", position: 2, total: 3)
+        let third = cardTarget("per_3", position: 3, total: 3)
+        let triage = [first, second, third]
+
+        #expect(AgentCardMachine.nextIndex(after: "per_1", in: triage) == 1,
+                "the skip advances to the next request")
+        #expect(AgentCardMachine.nextIndex(after: "per_2", in: triage) == 2)
+        #expect(AgentCardMachine.nextIndex(after: "per_3", in: triage) == nil,
+                "the last request has nowhere to advance")
+        #expect(AgentCardMachine.nextIndex(after: nil, in: triage) == 0,
+                "a closed card starts at the head")
+        #expect(AgentCardMachine.nextIndex(after: "per_gone", in: triage) == nil,
+                "a vanished request is not an advance")
+        #expect(AgentCardMachine.nextIndex(after: "per_1", in: [first]) == nil,
+                "a single pending has nowhere to advance")
+        #expect(AgentCardMachine.nextIndex(after: "per_1", in: []) == nil,
+                "an empty queue has nothing to skip to")
+    }
+
     @Test func testDismissReportsWhetherACardWasShowing() {
         var machine = AgentCardMachine()
         let nothingToDismiss = machine.dismiss(now: cardTime)

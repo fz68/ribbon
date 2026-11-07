@@ -151,5 +151,10 @@ enum Theme {
         static let agentCardTimeout: TimeInterval = 5
         /// How long the approval card shows its red border after a failed reply.
         static let agentCardErrorFlash: TimeInterval = 0.6
+        /// Hold time for the agent-chip skip gesture (permissions waiting).
+        static let agentLongPressThreshold: TimeInterval = 0.5
+        /// Hold time for the agent-chip interrupt gesture (nothing to approve).
+        /// Longer because it is a single-gesture destructive action.
+        static let agentInterruptHold: TimeInterval = 1.2
     }
 }

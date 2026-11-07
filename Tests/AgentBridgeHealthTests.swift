@@ -52,4 +52,14 @@ private let healthNow = Date(timeIntervalSince1970: 1_800_000_000)
                                           now: healthNow.addingTimeInterval(-5)),
                 "negative elapsed time is still recent")
     }
+
+    @Test func testEnabledIsAConjunction() {
+        #expect(!AgentBridgeHealth.visible(enabled: false, bridgeVisible: true),
+                "the menu switch wins over a healthy bridge")
+        #expect(!AgentBridgeHealth.visible(enabled: true, bridgeVisible: false),
+                "a disabled bridge is invisible even when the user wants it")
+        #expect(AgentBridgeHealth.visible(enabled: true, bridgeVisible: true),
+                "both conditions must hold")
+        #expect(!AgentBridgeHealth.visible(enabled: false, bridgeVisible: false))
+    }
 }

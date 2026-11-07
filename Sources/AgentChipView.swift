@@ -76,6 +76,78 @@ struct AgentChipVisual: Equatable {
     }
 }
 
+/// The press/long-press decision for the agent chip.
+///
+/// Split out from the view so tap, long press and the swallowed release are
+/// testable without timers or AppKit. The view's timer asks
+/// `thresholdReached(at:)`; the release compares the hold duration itself, so a
+/// delayed timer can never turn a long hold into a tap.
+struct AgentChipPress {
+    enum Action: Equatable {
+        case none
+        case tap
+        case longPress
+        /// A release that must not also fire a tap: the long press owns it.
+        case swallowedRelease
+    }
+
+    private let threshold: TimeInterval
+    private var pressedAt: Date?
+    /// Set when the long press fires; the release and the button action both
+    /// consult it.
+    private var didLongPress = false
+
+    init(threshold: TimeInterval = Theme.Timing.agentLongPressThreshold) {
+        self.threshold = threshold
+    }
+
+    /// Aborts an in-flight press without firing anything. Used when the bar is
+    /// dismissed mid-press, so no timer or swallow flag survives.
+    mutating func cancel() {
+        pressedAt = nil
+        didLongPress = false
+    }
+
+    /// Starts a press. A new press always re-arms the long press.
+    mutating func press(at now: Date) -> Action {
+        pressedAt = now
+        didLongPress = false
+        return .none
+    }
+
+    /// The chip has been held for the threshold. Fires at most once per press.
+    mutating func thresholdReached(at now: Date) -> Action {
+        guard let pressedAt, !didLongPress,
+              now.timeIntervalSince(pressedAt) >= threshold else {
+            return .none
+        }
+        didLongPress = true
+        return .longPress
+    }
+
+    /// The finger lifted. A release before the threshold is a tap; a release
+    /// after the long press (or after a threshold the timer missed) is
+    /// swallowed.
+    mutating func release(at now: Date) -> Action {
+        guard let pressedAt else { return .none }
+        self.pressedAt = nil
+        if didLongPress { return .swallowedRelease }
+        if now.timeIntervalSince(pressedAt) >= threshold {
+            didLongPress = true
+            return .swallowedRelease
+        }
+        return .tap
+    }
+
+    /// The button action that follows an inside release. Returns false when a
+    /// long press already claimed this press, so the tap handler stays silent.
+    mutating func consumeButtonAction() -> Bool {
+        guard didLongPress else { return true }
+        didLongPress = false
+        return false
+    }
+}
+
 /// The 56x24 agent chip.
 ///
 /// It only renders: the controller owns width, visibility and the single
@@ -99,9 +171,18 @@ final class AgentChipView: NSView {
     /// Full-chip tap target. The chip paints its own pill, so the button only
     /// forwards presses, exactly like the workspace chips.
     private let tapButton = ChipTapButton()
-    /// Called on the main thread for a press+release inside the chip. Set once by
-    /// the controller.
+    /// Called on the main thread for a press+release inside the chip that did
+    /// not become a long press. Set once by the controller.
     var onTap: (() -> Void)?
+    /// Called once when the chip has been held for
+    /// `Theme.Timing.agentLongPressThreshold`. Set once by the controller.
+    var onLongPress: (() -> Void)?
+    /// Hold time for the next press. The controller raises it to
+    /// `agentInterruptHold` while no permission is waiting, so an interrupt is a
+    /// deliberate 1.2s gesture and a skip stays at 0.5s.
+    var longPressThreshold = Theme.Timing.agentLongPressThreshold
+    private var press = AgentChipPress()
+    private var longPressTimer: Timer?
     private var visual = AgentChipVisual.visual(for: .off)
     private var hairlinePhase: CGFloat = 0
 
@@ -142,6 +223,11 @@ final class AgentChipView: NSView {
         tapButton.applyBarButtonStyle()
         tapButton.target = self
         tapButton.action = #selector(handleTap)
+        // The button action only fires for a release inside; the highlight state
+        // also tells us when the press starts, which is what arms the long press.
+        tapButton.pressChanged = { [weak self] pressed in
+            self?.handlePressChanged(pressed)
+        }
         addSubview(tapButton)
 
         NSLayoutConstraint.activate([
@@ -161,7 +247,46 @@ final class AgentChipView: NSView {
     }
 
     @objc private func handleTap() {
+        // A release after a long press still reaches the button action; the
+        // press machine swallows it so the tap does not fire twice.
+        guard press.consumeButtonAction() else { return }
         onTap?()
+    }
+
+    /// Aborts an in-flight press. Called when the bar is dismissed mid-press:
+    /// no timer may outlive it, and the button must not stay highlighted.
+    func cancelPress() {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        press.cancel()
+        // The didSet of the highlight also reports a release; the machine is
+        // already idle, so it produces no action.
+        tapButton.isHighlighted = false
+    }
+
+    deinit {
+        longPressTimer?.invalidate()
+    }
+
+    private func handlePressChanged(_ pressed: Bool) {
+        if pressed {
+            press = AgentChipPress(threshold: longPressThreshold)
+            _ = press.press(at: Date())
+            longPressTimer?.invalidate()
+            let timer = Timer(timeInterval: longPressThreshold,
+                              repeats: false) { [weak self] _ in
+                guard let self else { return }
+                if self.press.thresholdReached(at: Date()) == .longPress {
+                    self.onLongPress?()
+                }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            longPressTimer = timer
+        } else {
+            longPressTimer?.invalidate()
+            longPressTimer = nil
+            _ = press.release(at: Date())
+        }
     }
 
     /// Paints one state. Visibility and width belong to the controller.

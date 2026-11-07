@@ -141,7 +141,10 @@ private func writeText(_ text: String, to path: String) -> Bool {
                                             fallback: { 0 },
                                             malformed: .keepFile,
                                             label: "test config")
+        #expect(store.load() == 0, "the fallback loads and is cached first")
         #expect(!store.save(1.0),
                 "a path that is a directory makes save report failure")
+        #expect(store.load() == 0,
+                "a failed save must not update the cached value")
     }
 }

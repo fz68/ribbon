@@ -126,6 +126,10 @@ final class WeztermLocator: @unchecked Sendable {
     /// `is_active` is per tab: several windows can each have an active pane, so
     /// the ladder may pick a background window's pane. The JSON carries no
     /// window-focus flag, and that ambiguity is accepted.
+    ///
+    /// An exact session-to-pane mapping built from a `tui.session.select` hint
+    /// remains future work: the live payload has not been observed, so matching
+    /// stays directory-based for now.
     static func match(directory: String, in panes: [WeztermPane]) -> WeztermPane? {
         guard !directory.isEmpty else { return nil }
         let target = normalizePath(directory)

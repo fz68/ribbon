@@ -6,6 +6,9 @@ extension TouchBarController {
     /// Starts the OpenCode watch. Safe to call on every present: the bridge is
     /// created once and keeps running.
     func startAgentBridge() {
+        // The menu switch is authoritative: a disabled chip must never create a
+        // bridge, not even when the bar is presented.
+        guard AgentConfig.isEnabled else { return }
         guard agentBridge == nil else { return }
         let bridge = AgentBridge()
         bridge.onUpdate = { [weak self] snapshot in
@@ -45,21 +48,50 @@ extension TouchBarController {
     func applyAgentUpdate(snapshot: AgentSnapshot) {
         guard !didShutdown else { return }
         agentSnapshot = snapshot
+        // The menu switch is ANDed here, not in the bridge: a disabled chip is
+        // collapsed even if a snapshot arrives from a bridge that is shutting
+        // down, and the policy stays a pure function.
+        let visible = AgentBridgeHealth.visible(enabled: AgentConfig.isEnabled,
+                                                bridgeVisible: snapshot.visible)
+        // Permissions waiting -> the 0.5s skip; nothing to approve -> the
+        // longer 1.2s interrupt hold. Decided per snapshot, applied on the next
+        // press.
+        agentChip.longPressThreshold = snapshot.triage.isEmpty
+            ? Theme.Timing.agentInterruptHold
+            : Theme.Timing.agentLongPressThreshold
         // The card is checked on every snapshot, even when the chip pair is
         // unchanged: the queue can change without the chip state changing.
-        syncAgentCard(with: snapshot)
+        syncAgentCard(with: snapshot, visible: visible)
 
-        guard snapshot.chip != agentState || snapshot.visible != agentVisible else { return }
+        guard snapshot.chip != agentState || visible != agentVisible else { return }
         agentState = snapshot.chip
-        agentVisible = snapshot.visible
+        agentVisible = visible
 
         let visual = AgentChipVisual.visual(for: snapshot.chip)
-        setAgentChipVisible(snapshot.visible)
+        setAgentChipVisible(visible)
         agentChip.apply(visual)
         // A collapsed chip has nothing to animate, whatever the state says.
-        updateAgentAnimation(snapshot.visible ? visual : AgentChipVisual.visual(for: .off))
+        updateAgentAnimation(visible ? visual : AgentChipVisual.visual(for: .off))
         scheduleDoneExpiry(for: snapshot.chip)
-        log("agent chip state=\(Self.agentStateName(snapshot.chip)) visible=\(snapshot.visible ? 1 : 0)")
+        log("agent chip state=\(Self.agentStateName(snapshot.chip)) visible=\(visible ? 1 : 0)")
+    }
+
+    /// Applies the menu switch live: no restart, no re-present.
+    ///
+    /// Disabling stops the bridge and explicitly collapses the chip, so a stale
+    /// snapshot cannot bring it back; enabling starts discovery from scratch.
+    func applyAgentEnabled(_ enabled: Bool) {
+        guard !didShutdown else { return }
+        if enabled {
+            startAgentBridge()
+        } else {
+            stopAgentBridge()
+            agentSnapshot = nil
+            agentState = nil
+            agentVisible = false
+            setAgentChipVisible(false)
+            agentChip.apply(AgentChipVisual.visual(for: .off))
+        }
     }
 
     /// Collapses the chip by width, never by removing it: the level pill is

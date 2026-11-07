@@ -82,13 +82,17 @@ final class JSONConfigStore<T: Codable> {
     }
 
     /// Stores a configuration and writes it to disk.
+    ///
+    /// The cache is only updated when the write succeeds; otherwise the next
+    /// `load()` still returns the last value that actually reached the disk (or
+    /// re-reads it when nothing was cached yet).
     @discardableResult
     func save(_ value: T) -> Bool {
         let path = path()
         lock.lock()
         defer { lock.unlock() }
         let written = write(value, to: path)
-        cached = value
+        if written { cached = value }
         return written
     }
 
