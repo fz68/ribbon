@@ -55,6 +55,8 @@ extension TouchBarController {
         let button = ControlButton(title: "?", target: self, action: #selector(refreshTapped))
         button.applyBarButtonStyle()
         button.attributedTitle = title
+        // The glyph alone says nothing out loud, and the button is the refresh.
+        button.setAccessibilityLabel("Workspaces unavailable. Activate to refresh.")
         button.wantsLayer = true
         button.layer?.cornerRadius = Theme.Layout.cornerRadius
         button.layer?.borderWidth = 1

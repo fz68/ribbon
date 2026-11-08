@@ -18,6 +18,9 @@ struct AgentChipVisual: Equatable {
     let pulses: Bool
     /// Two-point bar along the bottom edge that sweeps with progress.
     let hairline: Bool
+    /// What the chip's tap target reports as its VoiceOver value. Derived from
+    /// the same state that paints the pill, so the two can never disagree.
+    let accessibilityValue: String
 
     static func visual(for state: AgentChipState) -> AgentChipVisual {
         switch state {
@@ -28,7 +31,8 @@ struct AgentChipVisual: Equatable {
                                    text: "",
                                    showsDot: false,
                                    pulses: false,
-                                   hairline: false)
+                                   hairline: false,
+                                   accessibilityValue: state.accessibilityValue)
         case .idle:
             // A hollow dot and a dim outline: present, but nothing to report.
             return AgentChipVisual(fill: Theme.controlBackground,
@@ -37,7 +41,8 @@ struct AgentChipVisual: Equatable {
                                    text: "",
                                    showsDot: true,
                                    pulses: false,
-                                   hairline: false)
+                                   hairline: false,
+                                   accessibilityValue: state.accessibilityValue)
         case .busy(let count):
             // The count uses the border colour, the way a workspace chip's
             // number uses its own border.
@@ -47,7 +52,8 @@ struct AgentChipVisual: Equatable {
                                    text: "\(count)",
                                    showsDot: false,
                                    pulses: false,
-                                   hairline: true)
+                                   hairline: true,
+                                   accessibilityValue: state.accessibilityValue)
         case .awaiting(let count):
             // Amber is light, so the dark focused-chip text stays legible.
             return AgentChipVisual(fill: Theme.agentWaitFill,
@@ -56,7 +62,8 @@ struct AgentChipVisual: Equatable {
                                    text: "!\(count)",
                                    showsDot: false,
                                    pulses: true,
-                                   hairline: false)
+                                   hairline: false,
+                                   accessibilityValue: state.accessibilityValue)
         case .done:
             return AgentChipVisual(fill: Theme.agentDoneFill,
                                    border: Theme.agentDoneFill,
@@ -64,7 +71,26 @@ struct AgentChipVisual: Equatable {
                                    text: "",
                                    showsDot: false,
                                    pulses: false,
-                                   hairline: false)
+                                   hairline: false,
+                                   accessibilityValue: state.accessibilityValue)
+        }
+    }
+}
+
+/// The words VoiceOver reads for one chip state.
+///
+/// Pure, so the whole vocabulary is testable without AppKit: the chip is a
+/// single stop, and this is the only thing that changes as the state does.
+extension AgentChipState {
+    var accessibilityValue: String {
+        switch self {
+        case .off: return "hidden"
+        case .idle: return "idle"
+        case .busy(let count):
+            return count == 1 ? "1 session busy" : "\(count) sessions busy"
+        case .awaiting(let count):
+            return count == 1 ? "1 approval waiting" : "\(count) approvals waiting"
+        case .done: return "finished"
         }
     }
 }
@@ -170,6 +196,12 @@ final class AgentChipView: NSView {
     /// Called once when the chip has been held for
     /// `Theme.Timing.agentLongPressThreshold`. Set once by the controller.
     var onLongPress: (() -> Void)?
+    /// The "Skip to next approval" Accessibility action: the same behaviour the
+    /// 0.5 s hold with a permission waiting runs. Set once by the controller.
+    var onSkipToNextApproval: (() -> Void)?
+    /// The "Interrupt session" Accessibility action: the same behaviour the
+    /// 1.2 s hold with nothing waiting runs. Set once by the controller.
+    var onInterruptSession: (() -> Void)?
     /// Hold time for the next press. The controller raises it to
     /// `agentInterruptHold` while no permission is waiting, so an interrupt is a
     /// deliberate 1.2s gesture and a skip stays at 0.5s.
@@ -178,6 +210,14 @@ final class AgentChipView: NSView {
     private var longPressTimer: Timer?
     private var visual = AgentChipVisual.visual(for: .off)
     private var hairlinePhase: CGFloat = 0
+
+    /// The system's Reduce Motion switch.
+    ///
+    /// Read live instead of observed: the next paint or tick picks a changed
+    /// value up, and the only cost of a stale read is one more frame of motion.
+    private var reducesMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
 
     init() {
         super.init(frame: NSRect(x: 0, y: 0,
@@ -216,6 +256,25 @@ final class AgentChipView: NSView {
         tapButton.applyBarButtonStyle()
         tapButton.target = self
         tapButton.action = #selector(handleTap)
+        // One VoiceOver stop for the whole chip: the tap target carries the
+        // name and the state, while the drawn number and the dot are decoration.
+        tapButton.setAccessibilityLabel("OpenCode agent")
+        tapButton.setAccessibilityRole(.button)
+        // The two long presses are pointer-only gestures, so each gets a named
+        // action that reaches the same controller path without a hold. The
+        // closures keep the behaviour in the controller, like `onLongPress`.
+        tapButton.setAccessibilityCustomActions([
+            NSAccessibilityCustomAction(name: "Skip to next approval") { [weak self] in
+                self?.onSkipToNextApproval?()
+                return true
+            },
+            NSAccessibilityCustomAction(name: "Interrupt session") { [weak self] in
+                self?.onInterruptSession?()
+                return true
+            },
+        ])
+        label.setAccessibilityElement(false)
+        dot.setAccessibilityElement(false)
         // The button action only fires for a release inside; the highlight state
         // also tells us when the press starts, which is what arms the long press.
         tapButton.pressChanged = { [weak self] pressed in
@@ -292,12 +351,13 @@ final class AgentChipView: NSView {
         dot.isHidden = !visual.showsDot
         hairline.isHidden = !visual.hairline
         hairline.backgroundColor = NSColor(argb: visual.border).cgColor
+        tapButton.setAccessibilityValue(visual.accessibilityValue)
         if visual.hairline {
             layoutHairline(phase: hairlinePhase)
         } else {
             hairline.frame = .zero
         }
-        if !visual.pulses {
+        if !visual.pulses || reducesMotion {
             layer?.opacity = 1
         }
     }
@@ -307,6 +367,9 @@ final class AgentChipView: NSView {
     /// A state that animates nothing only resets the two properties, so the
     /// caller can keep one timer for every state.
     func animate(elapsed: TimeInterval) {
+        // Reduce Motion: the fill, the border and the number already carry the
+        // state, so the breath and the sweep hold still instead of moving.
+        guard !reducesMotion else { return }
         if visual.pulses {
             let phase = 0.5 - 0.5 * cos(2 * .pi * elapsed / Theme.Timing.agentPulsePeriod)
             layer?.opacity = Self.pulseMinOpacity

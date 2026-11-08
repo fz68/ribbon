@@ -134,11 +134,13 @@ final class AgentCardView: NSView {
             currentTarget = nil
             isHidden = true
             alphaValue = 1
+            setAccessibilityValue(nil)
             return
         case .open(let target, _):
             currentTarget = target
             isHidden = false
             alphaValue = 1
+            setAccessibilityValue(nil)
             layer?.borderColor = NSColor(argb: Theme.agentWaitBorder).cgColor
             applyIdentity(target)
             applyActionCells(target, enabled: true)
@@ -148,6 +150,7 @@ final class AgentCardView: NSView {
             // The card is in flight: dim it and take every tap away so a second
             // answer cannot race the first.
             alphaValue = 0.6
+            setAccessibilityValue(nil)
             layer?.borderColor = NSColor(argb: Theme.agentWaitBorder).cgColor
             applyIdentity(target)
             applyActionCells(target, enabled: false)
@@ -155,6 +158,8 @@ final class AgentCardView: NSView {
             currentTarget = target
             isHidden = false
             alphaValue = 0.6
+            // The red flash is invisible to VoiceOver, so the phase is spoken.
+            setAccessibilityValue("Reply failed")
             layer?.borderColor = NSColor(argb: Self.errorBorder).cgColor
             applyIdentity(target)
             applyActionCells(target, enabled: false)
@@ -197,7 +202,10 @@ final class AgentCardView: NSView {
                                                    weight: .medium),
             .foregroundColor: NSColor(argb: Theme.focusedChipText),
         ])
-        identityButton.setAccessibilityLabel("Session")
+        // The visible title stays the compact "1/3" form; only the spoken label
+        // spells it out.
+        identityButton.setAccessibilityLabel(target.accessibilityIdentity)
+        identityButton.setAccessibilityHelp("Jump to the terminal session")
     }
 
     /// Paints the three action cells for `target` and gates their taps.

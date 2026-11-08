@@ -51,6 +51,13 @@ extension TouchBarController {
         // covers all three buttons and is hidden in strip mode anyway.
         guard mediaStack.alphaValue != alpha else { return }
         mediaStack.alphaValue = alpha
+        // The dimming is invisible to VoiceOver, so the same transition says it
+        // out loud: pointed at no session, these keys still reach whatever the
+        // system's media key does.
+        let help: String? = idle ? "No media session" : nil
+        for button in [mediaPrevButton, mediaPlayPauseButton, mediaNextButton] {
+            button.setAccessibilityHelp(help)
+        }
     }
 
     /// Updates the backoff counter and schedules the next poll.
@@ -84,6 +91,22 @@ extension TouchBarController {
         if let image = SymbolImage.make(symbol, accessibility: "Play / pause", logContext: "play/pause") {
             mediaPlayPauseButton.image = image
             mediaPlayPauseButton.imageScaling = .scaleProportionallyDown
+        }
+        // The symbol is the only cue that the button changed, and a VoiceOver
+        // user never sees it, so the label follows the same three cases.
+        mediaPlayPauseButton.setAccessibilityLabel(Self.mediaPlayPauseLabel(playing: playing))
+    }
+
+    /// The words for the action the button performs. Pure, so all three cases
+    /// are testable without the bar.
+    ///
+    /// The label names what activating does, not what is playing: while media
+    /// plays the button draws a pause glyph and pauses it, so it reads "Pause".
+    static func mediaPlayPauseLabel(playing: Bool?) -> String {
+        switch playing {
+        case .some(true): return "Pause"
+        case .some(false): return "Play"
+        case .none: return "Play / pause"
         }
     }
 }

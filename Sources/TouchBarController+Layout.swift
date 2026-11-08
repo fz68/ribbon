@@ -231,6 +231,9 @@ extension TouchBarController {
         if let image = SymbolImage.make("bolt.fill", accessibility: "Battery charging", logContext: "battery bolt") {
             batteryBoltView.image = image
         }
+        // The charging state is folded into the battery label's spoken value, so
+        // the bolt itself must not become a second stop.
+        batteryBoltView.setAccessibilityElement(false)
 
         batteryLabel.font = NSFont.monospacedDigitSystemFont(ofSize: Theme.Layout.labelFontSize, weight: .medium)
         batteryLabel.textColor = NSColor(argb: Theme.primaryText)

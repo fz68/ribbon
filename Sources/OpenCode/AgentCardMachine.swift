@@ -54,6 +54,14 @@ struct AgentCardTarget: Equatable {
         if case .form(let key) = kind { return key }
         return nil
     }
+
+    /// What the card's identity cell says to VoiceOver.
+    ///
+    /// The drawn cell abbreviates the same facts as "<name> 1/3", which reads
+    /// badly out loud; pure, so the composition is testable without AppKit.
+    var accessibilityIdentity: String {
+        "\(shortName), request \(position) of \(total)"
+    }
 }
 
 /// What the card submits, captured when the user taps a cell.

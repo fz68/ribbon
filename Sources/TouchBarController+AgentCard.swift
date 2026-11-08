@@ -30,6 +30,14 @@ extension TouchBarController {
         agentChip.onLongPress = { [weak self] in
             self?.handleAgentChipLongPress()
         }
+        // The Accessibility actions reach the two halves of the long press
+        // directly, so a VoiceOver user never has to hold a Touch Bar button.
+        agentChip.onSkipToNextApproval = { [weak self] in
+            self?.advanceAgentCard()
+        }
+        agentChip.onInterruptSession = { [weak self] in
+            self?.interruptAgentSession()
+        }
         agentCard.onIdentityTap = { [weak self] in
             // The identity cell jumps to the pane hosting the locked session,
             // then closes the card.
@@ -76,6 +84,8 @@ extension TouchBarController {
         guard agentCardMachine.open(target: target, now: Date()) else { return }
         log("agent card open \(target.shortName) \(target.position)/\(target.total)")
         renderAgentCard()
+        // Discrete transition only: the card just appeared, nothing polls here.
+        announce(target.accessibilityIdentity, element: agentCard)
         startAgentCardTimer()
     }
 
@@ -123,9 +133,7 @@ extension TouchBarController {
         guard let bridge = agentBridge else {
             // No bridge means no service; keep the card and flash like a failed
             // reply so the user is not left staring at a dimmed card.
-            agentCardMachine.failed(now: Date(), flash: Theme.Timing.agentCardErrorFlash)
-            renderAgentCard()
-            log("agent card failed")
+            failAgentCard()
             return
         }
         send(bridge) { [weak self] succeeded in
@@ -140,13 +148,23 @@ extension TouchBarController {
                 } else {
                     // Stay open, flash once, no automatic retry.
                     guard case .submitting = self.agentCardMachine.phase else { return }
-                    self.agentCardMachine.failed(now: Date(),
-                                                 flash: Theme.Timing.agentCardErrorFlash)
-                    self.renderAgentCard()
-                    log("agent card failed")
+                    self.failAgentCard()
                 }
             }
         }
+    }
+
+    /// Flashes a failed reply and announces it once.
+    ///
+    /// Both callers sit on the failure side of a submit, and the machine's
+    /// `failed` only leaves `.submitting`, so this is the transition into
+    /// `.failed` and nothing else. The 10 Hz tick's `recoverFromFlash` only
+    /// leaves that phase, so it can never re-announce.
+    private func failAgentCard() {
+        agentCardMachine.failed(now: Date(), flash: Theme.Timing.agentCardErrorFlash)
+        renderAgentCard()
+        log("agent card failed")
+        announce("Reply failed. Choose again.", element: agentCard)
     }
 
     // MARK: - Snapshots
@@ -258,9 +276,19 @@ extension TouchBarController {
             advanceAgentCard()
             return
         }
+        interruptAgentSession()
+    }
+
+    /// Interrupts the newest busy session; a no-op when nothing is interruptible.
+    ///
+    /// This is the tail of the 1.2 s hold, and the target of the chip's
+    /// "Interrupt session" Accessibility action, so the guards are repeated here
+    /// instead of relying on a press having happened.
+    func interruptAgentSession() {
         // Interrupt never targets a form holder: the target is the newest BUSY
         // session, so with only a form waiting this is a no-op.
-        guard let target = snapshot.interrupt else { return }
+        guard !didShutdown, agentVisible, let snapshot = agentSnapshot,
+              let target = snapshot.interrupt else { return }
         log("agent interrupt \(target.sessionID.prefix(8))")
         agentBridge?.interrupt(sessionID: target.sessionID)
     }
@@ -280,6 +308,8 @@ extension TouchBarController {
         guard agentCardMachine.open(target: next, now: Date()) else { return }
         log("agent card open \(next.shortName) \(next.position)/\(next.total)")
         renderAgentCard()
+        // Discrete transition only: a long press or an AX action moved the card.
+        announce(next.accessibilityIdentity, element: agentCard)
         startAgentCardTimer()
     }
 

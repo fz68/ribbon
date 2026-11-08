@@ -66,6 +66,14 @@ extension TouchBarController {
         agentState = snapshot.chip
         agentVisible = visible
 
+        // The announcement belongs to this discrete transition: the guard above
+        // is the only way in, and no tick or poll path reaches it unchanged.
+        if case .awaiting(let count) = snapshot.chip {
+            // Same wording as the chip's AX value, singular included.
+            let text = count == 1 ? "1 approval waiting" : "\(count) approvals waiting"
+            announce(text, element: agentChip)
+        }
+
         let visual = AgentChipVisual.visual(for: snapshot.chip)
         setAgentChipVisible(visible)
         agentChip.apply(visual)
@@ -108,7 +116,10 @@ extension TouchBarController {
 
     /// Starts, keeps or stops the single animation timer.
     private func updateAgentAnimation(_ visual: AgentChipVisual) {
-        let animates = visual.pulses || visual.hairline
+        // Reduce Motion: the pill keeps its fill, border and number, but the
+        // breath and the sweep never run, so no timer is armed at all.
+        let animates = (visual.pulses || visual.hairline)
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         guard animates else {
             agentAnimationTimer?.invalidate()
             agentAnimationTimer = nil
@@ -157,5 +168,21 @@ extension TouchBarController {
         case .awaiting(let count): return "awaiting(\(count))"
         case .done: return "done"
         }
+    }
+
+    // MARK: - Announcements
+
+    /// Posts one VoiceOver announcement.
+    ///
+    /// Only ever called from a discrete transition - a chip state change, a card
+    /// opening, a failed reply. Never call it from the 10 Hz animation tick or a
+    /// poll, which would repeat the same sentence at the timer's frequency.
+    func announce(_ message: String, element: NSView) {
+        NSAccessibility.post(element: element,
+                             notification: .announcementRequested,
+                             userInfo: [
+                                .announcement: message,
+                                .priority: NSAccessibilityPriorityLevel.medium.rawValue,
+                             ])
     }
 }

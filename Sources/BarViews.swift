@@ -119,6 +119,9 @@ final class ChipView: NSView {
         number.cell?.truncatesLastVisibleLine = true
         number.cell?.wraps = false
         number.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        // The chip's tap target speaks for the whole chip; the drawn number is
+        // part of the label it carries, not a stop of its own.
+        number.setAccessibilityElement(false)
         stack.addArrangedSubview(number)
         stack.setCustomSpacing(Theme.Layout.chipLabelSpacing, after: number)
 
@@ -210,6 +213,14 @@ final class ChipView: NSView {
             number.stringValue = displayName
         }
 
+        // One VoiceOver stop per chip: the tap target carries the drawn name and
+        // the focus state, while the number field and the app icons are
+        // decoration. The tenth workspace reads "0" for the same reason it draws
+        // it, so the label is the display name, never the raw workspace name.
+        button.setAccessibilityLabel(displayName)
+        button.setAccessibilitySelected(workspace.isFocused)
+        button.setAccessibilityValue(workspace.isFocused ? "focused" : nil)
+
         if reconcileIcons {
             for icon in iconViews {
                 stack.removeArrangedSubview(icon)
@@ -222,6 +233,9 @@ final class ChipView: NSView {
                 let icon = NSImageView(image: image)
                 icon.imageScaling = .scaleProportionallyDown
                 icon.translatesAutoresizingMaskIntoConstraints = false
+                // The chip is one stop; the app icons are decoration next to
+                // the name the tap target already reads out.
+                icon.setAccessibilityElement(false)
                 icon.widthAnchor.constraint(equalToConstant: Theme.Layout.iconSize).isActive = true
                 icon.heightAnchor.constraint(equalToConstant: Theme.Layout.iconSize).isActive = true
                 stack.addArrangedSubview(icon)

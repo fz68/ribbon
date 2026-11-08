@@ -121,5 +121,20 @@ extension TouchBarController {
         if batteryLabel.stringValue != text {
             batteryLabel.stringValue = text
         }
+        // The drawn text drops the "%" while charging and shortens a full charge
+        // to "F", so the spoken label restores the unit and the charging state
+        // the bolt would otherwise be the only carrier of.
+        batteryLabel.setAccessibilityLabel(Self.batteryAccessibilityLabel(status))
+    }
+
+    /// The spoken battery reading.
+    ///
+    /// Pure, so all five cases the drawn label can reach are testable without a
+    /// bar. "F" stands for a full battery with and without the bolt, so "full"
+    /// takes the charging suffix like every other percentage.
+    static func batteryAccessibilityLabel(_ status: BatteryState?) -> String {
+        guard let status else { return "Battery level unknown" }
+        let base = status.percent == 100 ? "Battery full" : "Battery \(status.percent) percent"
+        return status.charging ? base + ", charging" : base
     }
 }
