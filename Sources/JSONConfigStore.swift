@@ -62,6 +62,7 @@ final class JSONConfigStore<T: Codable> {
             if createIfMissing {
                 write(fresh, to: path)
                 log("\(label) created at \(path)")
+                Log.status.notice("\(self.label, privacy: .public) created at \(path, privacy: .private)")
             }
             cached = fresh
             return fresh
@@ -72,6 +73,7 @@ final class JSONConfigStore<T: Codable> {
             return decoded
         } catch {
             log("\(label) malformed (\(error)), using built-in defaults")
+            Log.status.error("\(self.label, privacy: .public) malformed: \(error.localizedDescription, privacy: .private); using built-in defaults")
             let fresh = fallback()
             if case .overwriteWithDefault = malformed {
                 write(fresh, to: path)
@@ -121,6 +123,7 @@ final class JSONConfigStore<T: Codable> {
             return true
         } catch {
             log("\(label) write failed: \(error)")
+            Log.status.error("\(self.label, privacy: .public) write failed: \(error.localizedDescription, privacy: .private)")
             return false
         }
     }

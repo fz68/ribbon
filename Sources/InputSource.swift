@@ -158,8 +158,10 @@ enum InputSource {
                                             withIntermediateDirectories: true)
             try fileManager.copyItem(atPath: legacyConfigurationPath, toPath: configurationPath)
             log("migrated IME config from \(legacyConfigurationPath)")
+            Log.status.notice("migrated IME config from \(legacyConfigurationPath, privacy: .private)")
         } catch {
             log("ime config migration failed: \(error)")
+            Log.status.error("ime config migration failed: \(error.localizedDescription, privacy: .private)")
         }
     }
 

@@ -105,6 +105,7 @@ enum TimeFormat {
         store.save(configuration)
         cachedFormatter = makeFormatter(configuration)
         log("clock config updated format=\(configuration.format) locale=\(configuration.locale)")
+        Log.status.notice("clock config updated: format=\(configuration.format, privacy: .public) locale=\(configuration.locale, privacy: .public)")
     }
 
     /// The configuration in use, loaded from disk (and created when missing) on
@@ -125,6 +126,7 @@ enum TimeFormat {
         let configuration = store.loadExisting()
         cachedFormatter = makeFormatter(configuration)
         log("clock config reloaded format=\(configuration.format) locale=\(configuration.locale)")
+        Log.status.notice("clock config reloaded: format=\(configuration.format, privacy: .public) locale=\(configuration.locale, privacy: .public)")
     }
 
     /// The configuration and formatter in use. The store keeps the configuration

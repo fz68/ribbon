@@ -275,6 +275,32 @@ Notes:
 
 The log is written to `~/Library/Logs/ribbon.log`; follow it with `tail -f`.
 
+### Diagnostics
+
+Ribbon also writes structured records to the unified log under subsystem `local.fanzhen.ribbon`,
+split into four categories: `agent`, `workspace`, `media` and `status`:
+
+```sh
+log stream --predicate 'subsystem == "local.fanzhen.ribbon"'
+log show --last 10m --predicate 'subsystem == "local.fanzhen.ribbon" AND category == "agent"'
+```
+
+Points of Interest signposts cover the slow paths, so `Instruments > os_signpost` (or
+`log show --signpost`) shows how long each one takes:
+
+- `WorkspaceRefresh` - one interval per workspace refresh, from the backend list to the applied
+  chips, ended with its outcome (`applied`, `unchanged`, `unavailable`, `no controller`).
+- `NowPlayingCLI` - one interval per `nowplaying-cli` call, ended with its outcome (`ok`,
+  `timeout`, `status N`).
+- `VolumeAppleScript` - one interval per `osascript` volume step, ended with its outcome (`ok`,
+  `timeout`, `status N`, `unparsable`).
+- `AgentEventStreamConnected` / `AgentEventStreamDisconnected` - points, not intervals: a tick when
+  the opencode event stream opens and one when it drops, so a reconnect loop is countable.
+
+The home directory path is redacted as `<private>` in the unified log. Front app names, session
+titles and input source names are not written to the unified log at all; the file log under
+`~/Library/Logs` keeps them as before.
+
 ## How it works
 
 Ribbon creates an `NSTouchBar` and presents it system-modally with the private DFRFoundation API

@@ -11,6 +11,7 @@ extension TouchBarController {
         ProcessRunner.runDetached("/usr/bin/pkill", ["ControlStrip"], timeout: Theme.Timing.controlStripTimeout) { result in
             if let error = result.launchError {
                 log("pkill ControlStrip failed: \(error)")
+                Log.status.error("pkill ControlStrip failed: \(error, privacy: .public)")
             }
         }
         log("pkill ControlStrip requested")

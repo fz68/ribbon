@@ -21,6 +21,22 @@ final class WorkspaceMonitor: @unchecked Sendable {
     private var restartWork: DispatchWorkItem?
     private var pollTimer: DispatchSourceTimer?
     private var stopping = false
+    /// The monitor mode last written to the unified log. The mode lines sit on
+    /// the restart path a crash loop drives once a second, so only a change is
+    /// news; all state below is guarded by `queue`.
+    private var lastEmittedMode: Mode?
+    /// When the last subscribe-exit record was written. A crash loop restarts
+    /// once a second, so that record is gated to one per minute.
+    private var lastSubscribeExitLoggedAt: Date?
+
+    /// How the monitor is watching the backend.
+    private enum Mode {
+        case subscribe
+        case polling
+    }
+
+    /// Minimum spacing between subscribe-exit records in the unified log.
+    private static let subscribeExitLogInterval: TimeInterval = 60
 
     init(label: String,
          subscribeLabel: String,
@@ -133,6 +149,17 @@ final class WorkspaceMonitor: @unchecked Sendable {
                 self.childPipe = nil
                 guard !self.stopping else { return }
                 RibbonCore.log("\(self.subscribeLabel) subscribe exited status=\(finished.terminationStatus), restarting")
+                // A crash loop reaches this once a second. The file line above
+                // still carries every iteration; the unified log gets one
+                // record per minute, which is enough to prove the loop.
+                let now = Date()
+                let due = self.lastSubscribeExitLoggedAt.map {
+                    now.timeIntervalSince($0) >= Self.subscribeExitLogInterval
+                } ?? true
+                if due {
+                    self.lastSubscribeExitLoggedAt = now
+                    Log.workspace.notice("\(self.subscribeLabel, privacy: .public) subscribe exited status=\(finished.terminationStatus, privacy: .public), restarting")
+                }
                 self.scheduleRestart(change)
             }
         }
@@ -140,12 +167,14 @@ final class WorkspaceMonitor: @unchecked Sendable {
             try process.run()
         } catch {
             log.emit("\(subscribeLabel) subscribe failed: \(error)")
+            Log.workspace.error("\(self.subscribeLabel, privacy: .public) subscribe failed: \(error.localizedDescription, privacy: .private); falling back to polling")
             startPolling(change)
             return
         }
         child = process
         childPipe = pipe
         RibbonCore.log("monitoring via subscribe")
+        logModeChange(.subscribe)
     }
 
     private func startPolling(_ change: @escaping () -> Void) {
@@ -157,6 +186,20 @@ final class WorkspaceMonitor: @unchecked Sendable {
         timer.resume()
         pollTimer = timer
         RibbonCore.log("monitoring via polling")
+        logModeChange(.polling)
+    }
+
+    /// Writes the mode line, and only when the mode actually changed.
+    ///
+    /// Called on `queue` from the start/restart path, so the comparison and the
+    /// assignment are serialized.
+    private func logModeChange(_ mode: Mode) {
+        guard lastEmittedMode != mode else { return }
+        lastEmittedMode = mode
+        switch mode {
+        case .subscribe: Log.workspace.notice("monitoring via subscribe")
+        case .polling: Log.workspace.notice("monitoring via polling")
+        }
     }
 
     private func scheduleRestart(_ change: @escaping () -> Void) {

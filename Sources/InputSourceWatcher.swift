@@ -127,6 +127,7 @@ final class InputSourceWatcher {
         if lastNotificationAt == nil, !loggedNotificationMissing {
             loggedNotificationMissing = true
             log("ime notification unusable, 1s poll in use")
+            Log.status.error("ime notification unusable, 1s poll in use")
         }
         // The source list may have changed with the selection, so the built-in
         // configuration has to be rebuilt to see a newly installed IME.

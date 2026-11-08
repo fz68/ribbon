@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The file half of the log: a path plus the handle appending to it.
 ///
@@ -83,15 +84,52 @@ private let sharedLogSink = LogFileSink(path: {
     return NSString(string: value).expandingTildeInPath
 }())
 
+/// The functional areas the unified log is split into.
+///
+/// One category per area, so a Console predicate can isolate a feature without
+/// filtering message text. The raw values are the category names that show up
+/// in `log stream` and in Console.
+enum LogCategory: String {
+    /// The opencode service, its event stream, and the agent chip and card.
+    case agent
+    /// Workspace monitoring and the workspace chips.
+    case workspace
+    /// Media transport, volume and brightness.
+    case media
+    /// The clock, the battery, the input source line and the Control Strip.
+    case status
+}
+
 /// Where the log is written.
 ///
 /// Overridable so tests can redirect it. The default comes from
 /// RIBBON_LOG_PATH and falls back to ~/Library/Logs/ribbon.log.
 enum Log {
+    /// The unified log subsystem.
+    ///
+    /// A literal on purpose: `Bundle.main.bundleIdentifier` differs under the
+    /// test bundle, and the subsystem of a Console predicate must stay stable
+    /// across the app and its tests. It equals `CFBundleIdentifier` in
+    /// `Resources/Info.plist`.
+    static let subsystem = "local.fanzhen.ribbon"
+
     static var path: String {
         get { sharedLogSink.path }
         set { sharedLogSink.path = newValue }
     }
+
+    // One `static let` per category: a shared logger is cheap and Sendable, and
+    // building one per call site would defeat nothing but readability.
+
+    /// The agent subsystem: opencode service discovery, the event stream, and
+    /// the chip and card decisions.
+    static let agent = os.Logger(subsystem: subsystem, category: LogCategory.agent.rawValue)
+    /// Workspace monitoring, the monitor's restart cycle, and the chips.
+    static let workspace = os.Logger(subsystem: subsystem, category: LogCategory.workspace.rawValue)
+    /// Media transport, volume and brightness.
+    static let media = os.Logger(subsystem: subsystem, category: LogCategory.media.rawValue)
+    /// The clock, the battery, the input source line and the Control Strip.
+    static let status = os.Logger(subsystem: subsystem, category: LogCategory.status.rawValue)
 }
 
 /// Writes one line to the log file and to stderr.

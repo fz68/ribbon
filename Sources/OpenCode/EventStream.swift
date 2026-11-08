@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// The reconnect schedule for the event stream.
 ///
@@ -137,6 +138,16 @@ final class EventStream {
     /// delta burst would otherwise wake the owner dozens of times a second.
     private static let activityNotifyInterval: TimeInterval = 5
 
+    /// Points of Interest signposts for the connection lifecycle. Kept in
+    /// release builds.
+    ///
+    /// Events rather than an interval: `connect()` and `finish()` already run
+    /// under a generation guard, and an interval state owned by a cancelled
+    /// generation would either never be ended or be ended twice - both are bugs
+    /// in a trace. Connected/disconnected events give the same timeline without
+    /// that risk.
+    private static let signposter = OSSignposter(subsystem: Log.subsystem, category: .pointsOfInterest)
+
     private let session: URLSession
     private let retryPolicy: StreamRetryPolicy
     private let idleTimeout: TimeInterval
@@ -157,6 +168,11 @@ final class EventStream {
     /// True between `connect()` and `finish()`; stops a cancelled task's late
     /// error from tearing down the connection that replaced it.
     private var connectionOpen = false
+    /// True once a stream failure has been written to the unified log, and reset
+    /// by the next connection that survives the upgrade. The retry backoff caps
+    /// at 30s, so an unconditional error line would be two records a minute for
+    /// as long as the service is down.
+    private var loggedStreamFailure = false
 
     /// - Parameters:
     ///   - session: injected so tests replay a scripted body via URLProtocol.
@@ -238,6 +254,12 @@ final class EventStream {
         let generation = self.generation
         lastActivity = DispatchTime.now()
         connectionOpen = true
+        // Emitted with the `connectionOpen` flip, while the lock still excludes
+        // `finish()`: that method reports a disconnect only for a connection
+        // that was open, so pairing the two here is what keeps
+        // Connected/Disconnected 1:1 - including a stream whose HTTP upgrade
+        // fails, which disconnects without ever delivering a line.
+        Self.signposter.emitEvent("AgentEventStreamConnected")
         let request = Self.eventRequest(endpoint: endpoint, idleTimeout: idleTimeout)
         lock.unlock()
 
@@ -299,8 +321,26 @@ final class EventStream {
             finish(generation: generation)
         } catch {
             log("agent event stream failed: \(error)")
+            if claimFailureRecord() {
+                Log.agent.error("agent event stream failed: \(error.localizedDescription, privacy: .private)")
+            }
             finish(generation: generation)
         }
+    }
+
+    /// Marks the current failure as reported.
+    ///
+    /// - Returns: true when this is the first failure of the streak, i.e. when
+    ///   the caller should write the record.
+    ///
+    /// Synchronous on purpose: `NSLock` may not be taken directly from an async
+    /// context, so `run()` calls in here instead.
+    private func claimFailureRecord() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let first = !loggedStreamFailure
+        loggedStreamFailure = true
+        return first
     }
 
     /// Whether `generation` is still the live connection. Synchronous on
@@ -323,6 +363,9 @@ final class EventStream {
             lock.unlock()
             return false
         }
+        // The upgrade succeeded, so the failure streak is over: the next failure
+        // is a new one and gets its own record.
+        loggedStreamFailure = false
         lock.unlock()
         queue.async { [weak self] in
             self?.onResync?()
@@ -353,6 +396,9 @@ final class EventStream {
         let delay = retryPolicy.delay(forAttempt: attempt)
         attempt += 1
         lock.unlock()
+        // Only an unexpected end gets here: an intentional stop bumps
+        // `generation` and returns above, so this marks a drop, not a teardown.
+        Self.signposter.emitEvent("AgentEventStreamDisconnected")
 
         queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }

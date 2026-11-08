@@ -1,4 +1,5 @@
 import Cocoa
+import os
 import RibbonBridge
 
 private func loadDFRCloseBox() -> (@convention(c) (Bool) -> Void)? {
@@ -9,6 +10,7 @@ private func loadDFRCloseBox() -> (@convention(c) (Bool) -> Void)? {
     let failure = opened == nil ? dlerror() : nil
     guard let handle = opened else {
         log("DFRFramework dlopen failed: \(failure.map { String(cString: $0) } ?? "unknown error")")
+        Log.status.error("DFRFramework dlopen failed: \(failure.map { String(cString: $0) } ?? "unknown error", privacy: .public)")
         return nil
     }
     guard let symbol = dlsym(handle, "DFRSystemModalShowsCloseBoxWhenFrontMost") else {
@@ -24,9 +26,15 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     let container = BarContainer(frame: NSRect(x: 0, y: 0, width: Theme.Layout.fullWidth, height: Theme.Layout.containerHeight))
     let leftStack = NSStackView()
     let workQueue = DispatchQueue(label: "local.ribbon.refresh")
+    /// Points of Interest signposts for the workspace refresh. Kept in release
+    /// builds: profiling a release build is exactly when this matters.
+    static let refreshSignposter = OSSignposter(subsystem: Log.subsystem, category: .pointsOfInterest)
     /// Picked once at launch; AeroSpace first so existing users never change.
     let workspaceBackend: WorkspaceBackend = WorkspaceBackendFactory.make()
     var workspaces: [Workspace] = []
+    /// True once a failed list has been reported and no list has succeeded
+    /// since. Keeps a dead CLI from writing one record per refresh.
+    var workspaceListUnavailable = false
     var pendingRefresh: DispatchWorkItem?
     var refreshTimer: Timer?
     var didShutdown = false
@@ -226,6 +234,7 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         let placement: Int64 = controlStripVisible ? 0 : 1
         NSTouchBar.presentSystemModalTouchBar(touchBar, placement: placement, systemTrayItemIdentifier: nil)
         log("presented placement=\(placement)")
+        Log.status.notice("Touch Bar presented placement=\(placement, privacy: .public)")
         // The bridge is started after the bar is on screen, so discovery, the
         // first event connection and the reconcile are never on the launch path.
         startAgentBridge()
@@ -288,17 +297,41 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         pendingRefresh?.cancel()
         pendingRefresh = nil
         guard !didShutdown else { return }
+        // One Points of Interest interval per refresh: it starts here and ends
+        // where the results are applied, so a slow list or a slow chip rebuild
+        // shows up as one bar instead of two gaps.
+        let signposter = Self.refreshSignposter
+        let signpostID = signposter.makeSignpostID()
+        let interval = signposter.beginInterval("WorkspaceRefresh", id: signpostID)
         workQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                signposter.endInterval("WorkspaceRefresh", interval, "no controller")
+                return
+            }
             let result = workspaceBackend.list()
             DispatchQueue.main.async {
+                // Every exit path ends the interval, with the outcome in the end
+                // message: an unended interval is a bug in a trace, not a gap,
+                // and message-less ends all collapse into one Instruments row.
+                var outcome = "unchanged"
+                defer { signposter.endInterval("WorkspaceRefresh", interval, "\(outcome, privacy: .public)") }
                 guard let result else {
+                    outcome = "unavailable"
+                    // Both backends return nil without logging when the CLI
+                    // fails, so this is the only trace of a dead CLI here. One
+                    // record per transition, not per 30s refresh.
+                    if !self.workspaceListUnavailable {
+                        Log.workspace.error("workspace list unavailable; keeping the current chips")
+                        self.workspaceListUnavailable = true
+                    }
                     if self.workspaces.isEmpty {
                         self.rebuildChips()
                     }
                     return
                 }
+                self.workspaceListUnavailable = false
                 guard result != self.workspaces else { return }
+                outcome = "applied"
                 self.workspaces = result
                 let names = result.map(\.name).joined(separator: ",")
                 let focused = result.first(where: \.isFocused)?.name ?? ""

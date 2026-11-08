@@ -99,6 +99,7 @@ final class ServiceLocator {
             if parent == candidate || parent.isEmpty {
                 // Reachable only if even "/" cannot be opened.
                 log("opencode service directory unavailable: \(target)")
+                Log.agent.error("opencode service directory unavailable: \(target, privacy: .private)")
                 watchingAncestor = false
                 return
             }
@@ -178,8 +179,10 @@ final class ServiceLocator {
             // malformed registration file might smuggle in.
             log("opencode service endpoint host=\(host) port=\(port) "
                 + "version=\(endpoint.version) pid=\(endpoint.pid)")
+            Log.agent.notice("opencode service endpoint host=\(host, privacy: .public) port=\(port, privacy: .public) version=\(endpoint.version, privacy: .public) pid=\(endpoint.pid, privacy: .public)")
         } else {
             log("opencode service endpoint unavailable")
+            Log.agent.notice("opencode service endpoint unavailable")
         }
         onEndpoint?(endpoint)
     }

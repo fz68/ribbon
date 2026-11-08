@@ -1,4 +1,5 @@
 import Cocoa
+import os
 
 /// Media transport control for the Touch Bar.
 ///
@@ -16,6 +17,10 @@ enum Media {
     /// Serial queue so transport commands keep their order and never block the UI.
     private static let commandQueue = DispatchQueue(label: "local.ribbon.media.command")
 
+    /// Points of Interest signposts for the helper calls. Kept in release
+    /// builds: profiling a release build is exactly when this matters.
+    private static let signposter = OSSignposter(subsystem: Log.subsystem, category: .pointsOfInterest)
+
     private static let logLock = NSLock()
     private static var didLogTool = false
     private static var didLogRaw = false
@@ -30,12 +35,16 @@ enum Media {
     /// currently playing.
     static func state() -> MediaState? {
         guard let tool = toolPath else {
-            logOnce("media helper not found, falling back to media keys")
+            if logOnce("media helper not found, falling back to media keys") {
+                Log.media.notice("nowplaying-cli not found, falling back to media keys")
+            }
             return nil
         }
         logTool(tool)
         guard let raw = capture(tool, ["get-raw"]) else {
-            logOnce("media state unavailable")
+            if logOnce("media state unavailable") {
+                Log.media.error("nowplaying-cli get-raw unavailable; reporting media as not playing")
+            }
             return MediaState(available: false, isPlaying: false)
         }
         logRaw(raw)
@@ -83,8 +92,17 @@ enum Media {
     }
 
     /// Runs the helper and returns its stdout.
+    ///
+    /// One Points of Interest interval per invocation: the cost of an external
+    /// helper is what a slow media row is made of.
     private static func capture(_ tool: String, _ arguments: [String], timeout: TimeInterval = 3) -> String? {
+        let signpostID = signposter.makeSignpostID()
+        let interval = signposter.beginInterval("NowPlayingCLI", id: signpostID)
         let result = ProcessRunner.run(tool, arguments, timeout: timeout)
+        // The outcome is classified before the guard so the interval carries it:
+        // message-less ends all collapse into one row in the Instruments table.
+        let outcome = result.timedOut ? "timeout" : (result.status == 0 ? "ok" : "status \(result.status)")
+        signposter.endInterval("NowPlayingCLI", interval, "\(outcome, privacy: .public)")
         guard !result.timedOut, result.status == 0 else { return nil }
         return String(data: result.stdout, encoding: .utf8) ?? ""
     }
@@ -125,11 +143,17 @@ enum Media {
         log("media raw=\(flattened.isEmpty ? "<empty>" : flattened)")
     }
 
-    private static func logOnce(_ message: String) {
+    /// Writes the first of the once-only messages and reports whether this call
+    /// was the one that wrote it.
+    ///
+    /// The structured line next to each call site rides the same one-shot gate,
+    /// so a 30 s media poll cannot flood the unified log with the same failure.
+    private static func logOnce(_ message: String) -> Bool {
         logLock.lock()
         defer { logLock.unlock() }
-        guard !didLogMissing else { return }
+        guard !didLogMissing else { return false }
         didLogMissing = true
         log(message)
+        return true
     }
 }

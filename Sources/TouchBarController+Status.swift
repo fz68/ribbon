@@ -15,6 +15,7 @@ extension TouchBarController {
     func applyBrightness(delta: Float, name: String) {
         guard let value = Brightness.adjust(by: delta) else {
             log("brightness \(name) unavailable")
+            Log.media.error("brightness \(name, privacy: .public) unavailable")
             return
         }
         showLevel(Double(value))
@@ -38,6 +39,7 @@ extension TouchBarController {
                 guard let self, !self.didShutdown else { return }
                 guard let result else {
                     log("volume \(name) unavailable")
+                    Log.media.error("volume \(name, privacy: .public) unavailable")
                     return
                 }
                 self.showLevel(Double(result) / 100)

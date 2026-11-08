@@ -77,4 +77,20 @@ struct LogTests {
         #expect(FileManager.default.fileExists(atPath: path),
                 "a write goes to the redirected path")
     }
+
+    /// The README and AGENTS.md tell users to filter on these literals: a typo
+    /// here would silently break every documented Console predicate while the
+    /// suite stayed green.
+    @Test func unifiedLogIdentifiersAreTheDocumentedLiterals() {
+        #expect(Log.subsystem == "local.fanzhen.ribbon",
+                "the subsystem is the documented one (got \(Log.subsystem))")
+        #expect(LogCategory.agent.rawValue == "agent",
+                "the agent category is documented as `agent` (got \(LogCategory.agent.rawValue))")
+        #expect(LogCategory.workspace.rawValue == "workspace",
+                "the workspace category is documented as `workspace` (got \(LogCategory.workspace.rawValue))")
+        #expect(LogCategory.media.rawValue == "media",
+                "the media category is documented as `media` (got \(LogCategory.media.rawValue))")
+        #expect(LogCategory.status.rawValue == "status",
+                "the status category is documented as `status` (got \(LogCategory.status.rawValue))")
+    }
 }

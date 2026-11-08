@@ -227,6 +227,7 @@ final class AgentBridge: @unchecked Sendable {
         send(completion: { ok in
             if !ok {
                 log("agent interrupt \(prefix) failed")
+                Log.agent.error("agent interrupt \(prefix, privacy: .private(mask: .hash)) failed")
             }
         }) { try await $0.interrupt(sessionID: sessionID) }
     }
@@ -326,6 +327,7 @@ final class AgentBridge: @unchecked Sendable {
                 // Deliberately no error text: it can carry the request URL, and
                 // the only actionable fact is that the fetch failed.
                 log("opencode reconcile failed; keeping the current chip state")
+                Log.agent.error("opencode reconcile failed; keeping the current chip state")
                 loggedReconcileFailure = true
             }
             return

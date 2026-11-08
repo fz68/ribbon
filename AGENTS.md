@@ -27,6 +27,9 @@
 
 - `Sources/Log.swift`: stderr + `~/Library/Logs/ribbon.log` 双写; `Log.path` 可重定向 (`RIBBON_LOG_PATH`)
 - 文件 sink 是 README 对外契约, 不得移除
+- 结构化日志用 `Log.agent` / `Log.workspace` / `Log.media` / `Log.status` (os.Logger, subsystem `local.fanzhen.ribbon`): 失败点用 `.error`, 生命周期转换用 `.notice`; 不要为高频轮询/tick 新增结构化行, 重复性失败要自带节流
+- 禁止把 `Logger` 包进接收 String 的函数, 禁止先拼接字符串再记录 (破坏惰性求值与隐私标注); `log(_:)` 是文件 sink 而非 Logger 包装, 不受此限
+- 隐私按值标注: `.public` 只用于 host/port/pid/版本/计数/时长/helper 与工作区标签/用户自选显示格式与 locale/固定系统路径与 errno 文本; 前台 app 名/会话标题/输入源名/家目录路径/Cocoa 错误描述一律 `.private`; 需跨行关联但不可读的值用 `.private(mask: .hash)`
 
 ## 并发
 
