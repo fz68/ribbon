@@ -35,6 +35,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.rebuildIMEColorMenu()
         }
         updateControlStripItemTitle(visible: controller.controlStripVisible)
+        updateAgentChipItemTitle(enabled: AgentConfig.isEnabled)
         DispatchQueue.main.asyncAfter(deadline: .now() + Theme.Timing.initialPresent) { [weak self] in
             self?.controller.present()
         }
@@ -94,18 +95,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         NSMenuItem(title: "Set App+ControlStrip mode", action: #selector(setAppWithControlStripMode), keyEquivalent: "")
     }
 
-    /// The OpenCode agent chip switch. A checkmark item, like the Control
-    /// Strip title, reflects the live state and takes effect without a restart.
+    /// The OpenCode agent chip switch. Like the Control Strip item, the title
+    /// names the action the next click performs and reflects the live state
+    /// without a restart.
     private func makeAgentChipItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Agent Chip", action: #selector(toggleAgentChip), keyEquivalent: "")
-        item.state = AgentConfig.isEnabled ? .on : .off
+        let item = NSMenuItem(title: "Show Agent Chip", action: #selector(toggleAgentChip), keyEquivalent: "")
         agentChipItem = item
         return item
     }
 
     /// Read-out of the selected keyboard input source.
     private func makeInputSourceItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Input Source: -", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: "Input Source: unknown", action: nil, keyEquivalent: "")
         item.isEnabled = false
         inputSourceItem = item
         return item
@@ -142,6 +143,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The menu item always names the action the next click performs.
     private func updateControlStripItemTitle(visible: Bool) {
         controlStripItem?.title = visible ? "Hide Control Strip" : "Show Control Strip"
+    }
+
+    /// Same idiom for the agent chip switch.
+    private func updateAgentChipItemTitle(enabled: Bool) {
+        agentChipItem?.title = enabled ? "Hide Agent Chip" : "Show Agent Chip"
     }
 
     /// Shows the selected input source in the menu.
@@ -241,7 +247,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The menu title of a choice: the pair rendered for today, for example
-    /// "10月24 周六 15:48".
+    /// "10月24 周六 15:48". The presets are ICU patterns, so this stays
+    /// `DateFormatter`; `Date.FormatStyle` cannot consume them.
     private static func clockFormatTitle(for choice: ClockFormatChoice) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: choice.locale)
@@ -282,7 +289,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             log("agent chip config write failed")
             return
         }
-        agentChipItem?.state = enabled ? .on : .off
+        updateAgentChipItemTitle(enabled: enabled)
         controller.applyAgentEnabled(enabled)
         log("agent chip enabled=\(enabled ? 1 : 0)")
     }

@@ -27,6 +27,7 @@ extension NSColor {
 
     /// The "#RRGGBB" form of the colour, used in the log.
     var hexString: String {
+        // Byte-to-hex encoding for diagnostics, not locale-aware number formatting.
         String(format: "#%02X%02X%02X",
                Int(round(redComponent * 255)),
                Int(round(greenComponent * 255)),

@@ -110,6 +110,8 @@ extension TouchBarController {
         let charging = status?.charging ?? false
         batteryBoltView.isHidden = !charging
         // Skip identical text so an unchanged battery reading avoids a no-op CA transaction.
+        // The "%" is dropped while charging and replaced by "F" at full charge, so
+        // `.formatted(.percent)` does not apply; the bolt is a separate image view.
         let text: String
         if let status {
             text = status.percent == 100 ? "F" : (charging ? "\(status.percent)" : "\(status.percent)%")

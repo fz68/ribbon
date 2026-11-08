@@ -87,6 +87,8 @@ enum TimeFormat {
         guard text.contains("星期") else { return text }
         let parts = Calendar.current.dateComponents([.month, .day, .weekday, .hour, .minute], from: date)
         let index = max(0, min(weekdayNames.count - 1, (parts.weekday ?? 1) - 1))
+        // The pattern is user-supplied ICU from `clock.json`, which `Date.FormatStyle` cannot
+        // consume, so the built-in default (the guard above) is rebuilt by hand here.
         return String(format: "%d月%d %@ %02d:%02d",
                       parts.month ?? 0,
                       parts.day ?? 0,
@@ -143,8 +145,10 @@ enum TimeFormat {
         return (configuration, formatter)
     }
 
-    /// Builds the formatter for a configuration. The locale is set before the
-    /// pattern so a locale-dependent token is resolved with the right locale.
+    /// Builds the formatter for a configuration. `DateFormatter` is deliberate and
+    /// required by the ICU-pattern contract (`Date.FormatStyle` cannot consume a raw
+    /// pattern); the locale is set before the pattern so a locale-dependent token is
+    /// resolved with the right locale.
     static func makeFormatter(_ configuration: ClockConfiguration) -> DateFormatter {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: configuration.locale)

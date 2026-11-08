@@ -72,7 +72,7 @@ set stays as the backstop after a reconnect.
   shows the option labels, and a tap replies with that choice. Any other form (free text, more
   choices, several questions) still needs the terminal, so the chip shows amber and a tap jumps to
   its session.
-- `Agent Chip` in the menu-bar menu turns the chip off and on without a restart.
+- `Show/Hide Agent Chip` in the menu-bar menu turns the chip off and on without a restart.
 
 ## Keyboard shortcuts
 
@@ -183,7 +183,8 @@ Either window manager will do, as long as Ribbon starts after it. With Nehir, en
 launch Ribbon: it probes for IPC once at launch and does not re-check.
 
 Ribbon has no Dock icon. Its menu-bar item shows the Ribbon logo and offers Re-present, Refresh,
-Show/Hide Control Strip, Set App+ControlStrip mode, Agent Chip, IME Color, Clock Format, and Quit.
+Show/Hide Control Strip, Set App+ControlStrip mode, Show/Hide Agent Chip, IME Color, Clock Format,
+and Quit.
 
 ## Configuration
 
@@ -191,7 +192,7 @@ There are three configuration files: the input source line at
 `~/Library/Application Support/Ribbon/ime.json`, the clock display at
 `~/Library/Application Support/Ribbon/clock.json`, and the agent chip switch at
 `~/Library/Application Support/Ribbon/agent.json`. The agent file is a single object,
-`{"enabled": true}`; set it to `false` (or use `menu-bar icon > Agent Chip`) to remove the chip
+`{"enabled": true}`; set it to `false` (or use `menu-bar icon > Show/Hide Agent Chip`) to remove the chip
 entirely. It is written back by the menu item and left untouched when it cannot be parsed.
 
 ### Input source line (`ime.json`)
