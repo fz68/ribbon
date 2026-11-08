@@ -237,13 +237,17 @@ private let lateForm =
         bridge.reply(sessionID: "ses_1", requestID: "per_1", decision: .always) { ok in
             results.withLock { $0.append(ok) }
         }
-        #expect(waitUntil(timeout: 5) { results.value == [true] },
+        try #require(waitUntil(timeout: 5) { results.value.count == 1 },
+                     "the permission reply completion reported one result")
+        #expect(results.value == [true],
                 "a 200 answer for the permission reply reports success")
         stage.withLock { $0 = 500 }
         bridge.reply(sessionID: "ses_1", requestID: "per_1", decision: .once) { ok in
             results.withLock { $0.append(ok) }
         }
-        #expect(waitUntil(timeout: 5) { results.value == [true, false] },
+        try #require(waitUntil(timeout: 5) { results.value.count == 2 },
+                     "the failed permission reply completion reported a second result")
+        #expect(results.value == [true, false],
                 "a 500 answer for the same reply reports failure")
         let posted = ABStub.recorded(path: "/api/session/ses_1/permission/per_1/reply")
         #expect(posted.count == 2 && posted.allSatisfy { $0.method == "POST" },
@@ -282,13 +286,17 @@ private let lateForm =
         bridge.replyForm(sessionID: "ses_2", formID: "frm_9", fieldKey: "choice", value: "go") { ok in
             results.withLock { $0.append(ok) }
         }
-        #expect(waitUntil(timeout: 5) { results.value == [true] },
+        try #require(waitUntil(timeout: 5) { results.value.count == 1 },
+                     "the form reply completion reported one result")
+        #expect(results.value == [true],
                 "a 200 answer for the form reply reports success")
         stage.withLock { $0 = 500 }
         bridge.replyForm(sessionID: "ses_2", formID: "frm_9", fieldKey: "choice", value: "stop") { ok in
             results.withLock { $0.append(ok) }
         }
-        #expect(waitUntil(timeout: 5) { results.value == [true, false] },
+        try #require(waitUntil(timeout: 5) { results.value.count == 2 },
+                     "the failed form reply completion reported a second result")
+        #expect(results.value == [true, false],
                 "a 500 answer for the same reply reports failure")
         let posted = ABStub.recorded(path: "/api/session/ses_2/form/frm_9/reply")
         #expect(posted.count == 2, "each call posted exactly once")

@@ -57,7 +57,13 @@ private final class ReportBox: @unchecked Sendable {
         watcher.start()
         watcher.start()
         _ = waitUntil(timeout: 2) { box.count >= 1 }
-        #expect(box.count <= 1, "one selection yields at most one report")
+        // Liveness cannot be asserted here: the watcher is change-gated (it seeds
+        // and compares `lastID`, Sources/InputSourceWatcher.swift:24-35), and
+        // `InputSource.current` is a live TISCopyCurrentKeyboardInputSource query
+        // with no injection seam (Sources/InputSource.swift:268), so a test cannot
+        // force a change. Only "no duplicate report" is provable.
+        #expect(box.count <= 1,
+                "starting twice reports at most once: the watcher only reports when the input source changes, and nothing changed here")
         watcher.stop()
         watcher.stop()
         #expect(box.count <= 1, "a second stop leaves the reports alone")

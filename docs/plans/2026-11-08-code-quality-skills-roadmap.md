@@ -3,7 +3,7 @@
 日期: 2026-11-08
 仓库: ribbon (本仓库)
 基线提交: 64e7bb8 (refactor: fold the monitor wiring in, drop the dead members, share the test helpers)
-状态: 阶段 0 完成 — 基线已测全并回填 (§3.2); 工具链已修复 (§3.3); AGENTS.md 已落地; 尚未提交
+状态: 阶段 1 完成 (2026-11-08) — 260 声明 / 282 用例全过; lint 绿; Sources 行覆盖在噪声带内; 并行化拆分见 §5.1; 阶段 2 待启动
 关联: `.opencode/skills/` 下 9 个技能 (2026-11-08 自 twostraws/Swift-Agent-Skills 索引精选安装)
 
 ## 1. 目标
@@ -59,6 +59,8 @@
 - 耗时前四 suite 占 25.98s 中的 19.3s: SupportLayerTests 6.0s, ProcessRunnerTests 5.6s, WorkspaceMonitorTests 5.4s, NehirTests 2.3s (真实 sleep/轮询间隔, 非 flaky; 266 个测试里 264 个 < 0.5s)
 - RibbonBridge (.m) 未被插桩, 报告中零代表; 分支覆盖列全空 (0/0), 85.12% 不是分支覆盖
 - 三个 make 目标各触发一次全量冷编译 (flags 不同致 SwiftPM 缓存 miss), 没有"仅跑测试"的暖构建目标
+- 覆盖率度量噪声: 同一份代码连跑 6 次 make coverage, Sources 行覆盖落在 73.70%–73.93% (missed 1657–1672), 波动来自 async AppKit/OpenCode 路径 (AppIconCache / BarViews / Nehir / AgentSessionStore 等单次相差 2–6 行); 覆盖率只能按噪声带判定, 不能拿单次数字当阈值
+- 测试计数口径: swift-testing 的 `Test run with N tests` 统计的是 @Test 声明数, 不是执行用例数 (单个 4 用例的参数化测试会报 "1 test", 已在 Xcode 16.3 / Testing 1501 实测); 参数化改造会让声明数下降而用例数上升 (269 声明/273 用例 → 256 声明/278 用例), 因此度量口径统一用执行用例数
 
 ### 3.3 本机工具链阻塞 (证据链)
 
@@ -83,7 +85,7 @@
 | 阶段 | 技能 | 关键动作 | 出口条件 |
 |---|---|---|---|
 | 0 | (无技能) | AGENTS.md; 基线 (已测全, §3.2); 工具链修复 (已解决, §3.3) | AGENTS.md 存在; 基线表可复现 |
-| 1 | swift-testing-pro | `Log.path` 改 per-test 注入以解 `--no-parallel`; 参数化收敛同构用例; 错误路径补 `#expect(throws:)` (ProcessRunner / JSONConfigStore / ToolLocator) | `make test` 绿; 测试数不减; Sources 行覆盖不低于 73.86% |
+| 1 | swift-testing-pro | 已完成: LogFileSink 实例化 + ThrottledLogger 注入闭包 + 三处日志内容断言改内存捕获; 参数化收敛 4 组同构用例 (17 声明 -> 4, 用例 273 -> 278); 断言完整性 (4 处折叠等待改两步须、4 处 guard+#expect(Bool(false)) 改 try #require、2 处 fixture 写入加存在性断言); 补 4 个 OpenCodeClientError 错误身份测试; 说明: 该库除 OpenCodeClientError 外无 throwing API, `#expect(throws:)` 不适用于 Optional/Bool 失败通道; 拆 `--no-parallel` 已拆出至 §5.1 | 达成: `make test` 绿, 260 声明 / 282 用例 (基线 273 用例); Sources 行覆盖在噪声带内; 所触文件 missed 不增 (Log 1 / ThrottledLogger 0 / AeroSpace 8) |
 | 2 | observability | `os.Logger` (子系统 + media/workspace/agent/status 分类) 双写, 保留文件 sink; `.privacy` 标注 workspace 名/前台 app 名/输入源 id; signpost 打 Nehir/AeroSpace 1s 轮询、30s 刷新、osascript 音量热路径 | lint+test 绿; README 日志契约不变 |
 | 3 | swift-concurrency-pro | 先审计产出 findings 清单再动手; 收敛约 8 处 `@unchecked Sendable`; EventStream 裸 `Task {}` → 结构化并发 + 真实取消传播; EventStream.swift:306 "never hold NSLock across await" 从注释升级为可执行约束 | 0 个新增 `@unchecked Sendable`; lint+test 绿; Touch Bar 手工冒烟 |
 | 4 | swift-api-design-guidelines-skill | RibbonCore public 符号 + RibbonBridge `include/` C 头的命名/参数标签/文档注释 | 纯增量, lint+test 绿 |
@@ -92,6 +94,25 @@
 | 7 | appkit-accessibility-auditor | 对 BarViews / AgentChipView / AgentCardView 跑 P0-P2 审计; chip 截断名以完整名作 AX label; 审批卡 允许/总是/拒绝 三按钮 AX label | P0 清零; 不新增 TCC 请求 |
 | 8 | writing-for-interfaces | 菜单项 (Re-present/Refresh/Show-Hide Control Strip/Agent Chip/IME Color/Clock Format)、chip `?` 占位、审批卡文案、日志错误文案 | 文案评审通过; 可与任意阶段并行 |
 | 9 | macos-spm-app-packaging | 按其校验矩阵查 bundle 结构与签名; 公证被 Developer ID 阻塞, 只做结构校验 | 校验矩阵全过或差异清单记入本文件 |
+
+### 5.1 并行化未完成项 (自阶段 1 拆出)
+
+阶段 1 的步骤 A 只消除了"日志目标"这一类竞争源。要真正拆掉 `make test` 的 `--no-parallel`, 还需处理下表进程级可变状态 (2026-11-08 测绘)。这些钩子存在的原因是生产代码没有依赖注入 (Media / Nehir / WorkspaceBackend 直接读进程状态), 属于阶段 3 的重构范围, 不宜在测试护栏阶段做大改。
+
+| 状态 | 位置 | 竞争事实 |
+|---|---|---|
+| `InputSource.configurationPath` | `InputSource.swift:88` | ConfigTests 16 处改写, 仅 1 个测试恢复 → 全局终值随测试顺序漂移 (现状已不确定) |
+| `TimeFormat.configurationPath` | `ClockFormat.swift:40` | TimeFormatTests:124-148 删文件后断言"未被重建", 并行时 TouchBarChipsTests 的 init 触发 store.load(createIfMissing) 会重建 → 必然 flake |
+| `AgentConfig.configurationPath` | `AgentConfig.swift:22` | 当前无并发读方; 改写需 defer 恢复 (部分已有) |
+| `InputSource.legacyConfigurationPath` / `didMigrateLegacyConfiguration` | `InputSource.swift:108,119` | 无锁, ConfigTests 直接写 |
+| `Media.toolPath` | `Media.swift:14` | 无锁, MediaTests 改写; TouchBarChipsTests 经 pollMediaState 读到 |
+| `Nehir.binaryOverride` | `Nehir.swift:55` | 无锁, NehirTests / WorkspaceBackendTests 改写; Nehir.hasIPC 首次访问即冻结当时值 |
+| `WorkspaceBackend.aerospaceAvailable` / `nehirAvailable` | `WorkspaceBackend.swift:38-39` | 无锁闭包钩子, NehirTests 改写 |
+| `SymbolImage.cache` / `AppIconCache.cache` + `generation` | `SymbolImage.swift:15`, `AppIconCache.swift:18-19` | 文档声明仅主线程, 但对应两个 suite 非 @MainActor |
+| `InputSource.current` / `InputSourceWatcher.lastID` | `InputSource.swift:268`, `InputSourceWatcher.swift:24-35` | live `TISCopyCurrentKeyboardInputSource` query with no injection seam; the watcher is change-gated by design, so a test cannot force a report — `testWatcherStartIsIdempotent` can only prove "no duplicate", never liveness |
+
+- 出口: `make test` (去掉 `--no-parallel`) 连续 3 次全绿; 届时同步移除全部 `@Suite(.serialized)`、Makefile 注释与 AGENTS.md / README 对应条款。
+- 阶段 1 只做纯测试工作 (参数化 + 断言), 不触碰上述生产代码。
 
 ## 6. 统一出口条件
 

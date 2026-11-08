@@ -5,11 +5,9 @@ import Testing
 @Suite(.serialized) final class ColorHexTests {
     init() { _ = TestBootstrap.tempRoot }
 
-    @Test func testNSColorHex() {
-        guard let color = NSColor(hex: "#1122FF") else {
-            #expect(Bool(false), "a six digit hex with a hash should parse")
-            return
-        }
+    @Test func testNSColorHex() throws {
+        let color = try #require(NSColor(hex: "#1122FF"),
+                                 "a six digit hex with a hash should parse")
         #expect(abs(color.redComponent - CGFloat(0x11) / 255.0) < 0.001,
                 "red decodes the 0x11 channel")
         #expect(abs(color.greenComponent - CGFloat(0x22) / 255.0) < 0.001,
@@ -19,10 +17,8 @@ import Testing
         #expect(abs(color.alphaComponent - 1) < 0.001,
                 "alpha defaults to opaque")
 
-        guard let bare = NSColor(hex: "1122FF") else {
-            #expect(Bool(false), "a six digit hex without a hash should parse")
-            return
-        }
+        let bare = try #require(NSColor(hex: "1122FF"),
+                                "a six digit hex without a hash should parse")
         #expect(abs(bare.blueComponent - CGFloat(0xFF) / 255.0) < 0.001,
                 "the hash is optional")
 

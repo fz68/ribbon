@@ -61,7 +61,7 @@ import Testing
                 "stderr never leaks into stdout")
     }
 
-    @Test func testRunDetachedCompletes() {
+    @Test func testRunDetachedCompletes() throws {
         let box = Box<ProcessResult>()
         ProcessRunner.runDetached("/bin/echo", ["hi"]) { result in
             box.store(result)
@@ -69,10 +69,8 @@ import Testing
 
         #expect(waitUntil { box.value != nil },
                 "the detached completion runs within the wait window")
-        guard let result = box.value else {
-            #expect(Bool(false), "the detached completion delivered a result")
-            return
-        }
+        let result = try #require(box.value,
+                                  "the detached completion delivered a result")
         #expect(result.status == 0, "the detached child exits 0")
         #expect(result.stdout == Data("hi\n".utf8), "the detached run captures stdout verbatim")
         #expect(result.timedOut == false, "a fast detached child does not time out")

@@ -49,24 +49,17 @@ import Testing
     }
 
     @Test func testLogThrottledWritesOnce() {
-        let saved = Log.path
-        defer { Log.path = saved }
+        // The logger carries its own gate, so this test neither redirects the
+        // shared log path nor re-arms the process-wide one.
+        var lines: [String] = []
+        let logger = ThrottledLogger { lines.append($0) }
 
-        // The throttle gate is process wide, so another test may have opened it.
-        AeroSpace.resetLogThrottleForTesting()
+        AeroSpace.logThrottled("coverage-a", via: logger)
+        AeroSpace.logThrottled("coverage-b", via: logger)
 
-        let path = TestTemp.path("log-throttled.log")
-        try? FileManager.default.removeItem(atPath: path)
-        Log.path = path
-
-        AeroSpace.logThrottled("coverage-a")
-        AeroSpace.logThrottled("coverage-b")
-
-        let text = (try? String(contentsOf: URL(fileURLWithPath: path), encoding: .utf8)) ?? ""
-        let written = text.split(whereSeparator: \.isNewline)
-        #expect(written.count == 1, "the second call is throttled (got \(written.count) lines)")
-        #expect(text.contains("coverage-a"), "the first message is written")
-        #expect(!text.contains("coverage-b"), "the throttled message is not written")
+        #expect(lines.count == 1, "the second call is throttled (got \(lines.count) lines)")
+        #expect(lines.contains("coverage-a"), "the first message is written")
+        #expect(lines.contains("coverage-b") == false, "the throttled message is not written")
     }
 
     @Test func testWindowsByWorkspaceParsing() {

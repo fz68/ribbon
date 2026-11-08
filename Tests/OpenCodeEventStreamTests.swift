@@ -690,6 +690,51 @@ private func chunks(_ text: String, size: Int) -> [Data] {
         #expect(bare.first?.resources.isEmpty == true, "missing resources are empty")
     }
 
+    @Test func testClientReportsATypedErrorWhenThePermissionReplyFails() async throws {
+        StubURLProtocol.install { _ in StubReply(status: 500) }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        await #expect(throws: OpenCodeClientError.badStatus(500)) {
+            try await client.replyPermission(sessionID: "ses_1",
+                                             requestID: "per_1",
+                                             decision: .once)
+        }
+    }
+
+    @Test func testClientReportsATypedErrorWhenTheFormReplyFails() async throws {
+        StubURLProtocol.install { _ in StubReply(status: 500) }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        await #expect(throws: OpenCodeClientError.badStatus(500)) {
+            try await client.replyForm(sessionID: "ses_1",
+                                       formID: "frm_1",
+                                       fieldKey: "choice",
+                                       value: "a")
+        }
+    }
+
+    @Test func testClientReportsATypedErrorWhenPendingRequestsFail() async throws {
+        StubURLProtocol.install { _ in StubReply(status: 500) }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        await #expect(throws: OpenCodeClientError.badStatus(500)) {
+            _ = try await client.pendingRequests(sessionID: "ses_1")
+        }
+    }
+
+    @Test func testClientReportsATypedErrorWhenInterruptFails() async throws {
+        StubURLProtocol.install { _ in StubReply(status: 500) }
+        defer { StubURLProtocol.uninstall() }
+
+        let client = OpenCodeClient(endpoint: testEndpoint, session: stubSession())
+        await #expect(throws: OpenCodeClientError.badStatus(500)) {
+            try await client.interrupt(sessionID: "ses_1")
+        }
+    }
+
     @Test func testEndpointDescriptionNeverContainsPassword() {
         let endpoint = ServiceEndpoint(url: URL(string: "http://127.0.0.1:1")!,
                                        password: "super-secret",

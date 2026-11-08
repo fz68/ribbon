@@ -140,12 +140,11 @@ enum AeroSpace {
             .filter { !$0.isEmpty }
     }
 
-    static func logThrottled(_ message: String) {
-        errorLog.emit(message)
-    }
-
-    /// Test hook: re-arms the throttle gate, so the next call always writes.
-    static func resetLogThrottleForTesting() {
-        errorLog.resetForTesting()
+    /// Writes `message` through the shared throttled logger.
+    ///
+    /// `logger` defaults to the process-wide one, so production callers are
+    /// unchanged; tests pass their own to get an isolated gate.
+    static func logThrottled(_ message: String, via logger: ThrottledLogger = errorLog) {
+        logger.emit(message)
     }
 }

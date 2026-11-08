@@ -70,7 +70,7 @@ private func decodedSourceEntry(at path: String, id: String) -> [String: Any]? {
                 "the real ime.json was not touched by the test")
     }
 
-    @Test func testTimeFormatConfiguration() {
+    @Test func testTimeFormatConfiguration() throws {
         let path = TestTemp.path("clock.json")
         try? FileManager.default.removeItem(atPath: path)
         TimeFormat.configurationPath = path
@@ -86,10 +86,8 @@ private func decodedSourceEntry(at path: String, id: String) -> [String: Any]? {
         #expect(json?["locale"] as? String == "en_US", "the locale round-trips")
 
         let components = DateComponents(year: 2026, month: 10, day: 24, hour: 9, minute: 5)
-        guard let date = Calendar.current.date(from: components) else {
-            #expect(Bool(false), "Calendar.current should build 2026-10-24 09:05")
-            return
-        }
+        let date = try #require(Calendar.current.date(from: components),
+                                "Calendar.current should build 2026-10-24 09:05")
         #expect(TimeFormat.string(from: date) == "09:05",
                 "the new format is live at once (the cache was invalidated)")
     }
@@ -278,6 +276,8 @@ private func decodedSourceEntry(at path: String, id: String) -> [String: Any]? {
         {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{}}
         """
         try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(FileManager.default.fileExists(atPath: path),
+                "the fixture configuration was written")
 
         #expect(InputSource.setAppearance(id: "com.example.lineposition",
                                           name: "Line Position IME",
@@ -302,6 +302,8 @@ private func decodedSourceEntry(at path: String, id: String) -> [String: Any]? {
         {"default":{"line":true,"color":"#4FA3FF","rainbow":false},"sources":{},"linePosition":"top"}
         """
         try? Data(json.utf8).write(to: URL(fileURLWithPath: path))
+        #expect(FileManager.default.fileExists(atPath: path),
+                "the fixture configuration was written")
 
         #expect(InputSource.setAppearance(id: "com.example.preserveposition",
                                           name: "Preserve Position IME",

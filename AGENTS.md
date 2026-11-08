@@ -18,7 +18,9 @@
 
 - 只用 swift-testing (`import Testing`), 禁止 XCTest
 - 错误路径断言用 `#expect(throws:)`; 可失败前置用 `try #require()`
-- 现状 37/38 个 suite 标了 `@Suite(.serialized)` (历史原因: `Log.path` 全局); 新测试尽量不依赖进程级全局状态
+- 现状 35/38 个 suite 标了 `@Suite(.serialized)` (历史原因: 配置路径等进程级全局, 见路线图 §5.1); `LogTests` / `ThrottledLoggerTests` 已解除; 新测试尽量不依赖进程级全局状态
+- 同构用例用 `@Test(arguments:)`: 用例载体类型需 `Sendable` + `CustomTestStringConvertible` (否则失败只报 "case N of M", 丢失场景可读性); 注意 runner 的 `Test run with N tests` 统计声明数而非用例数
+- 断言日志内容时注入 `ThrottledLogger { ... }` 或自建 `LogFileSink`, 不要读进程级日志文件
 - 确需改 `Log.path`: 先保存旧值, `defer` 恢复 (参考 Tests/LogTests.swift 的写法)
 
 ## 日志
@@ -30,7 +32,7 @@
 
 - GCD-first: serial `DispatchQueue` + main queue hop 为主
 - async/await 只存在于 `Sources/OpenCode/` 三文件 (OpenCodeClient / AgentBridge / EventStream); 新代码不要把 GCD 类型大面积改 async, 在已有 async 边界内扩展
-- 不新增 `@unchecked Sendable` (现存约 8 处, 待收敛)
+- 不新增 `@unchecked Sendable` (现存 9 处, 含 2026-11-08 新增的 `LogFileSink`: 全部状态由单一 NSLock 守卫; 待阶段 3 收敛)
 - 禁止跨 `await` 持 `NSLock` (见 EventStream.swift:306 注释)
 - Package.swift 是 swift-tools-version 5.9 / Swift 5 语言模式, 未开 strict concurrency - 开了会炸现存 `@unchecked` 位点
 
