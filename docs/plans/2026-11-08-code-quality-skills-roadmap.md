@@ -3,7 +3,7 @@
 日期: 2026-11-08
 仓库: ribbon (本仓库)
 基线提交: 64e7bb8 (refactor: fold the monitor wiring in, drop the dead members, share the test helpers)
-状态: 阶段 3 完成 (2026-11-08) — 并发审计落地并修掉 2 个 P1; 9 个 @unchecked Sendable 未增; 阶段 4 待启动
+状态: 阶段 4-5 完成 (2026-11-08) — 公开面 8 个声明全部文档化并收窄 1 个; 架构诊断结论: 不重构; 阶段 6 待启动
 关联: `.opencode/skills/` 下 9 个技能 (2026-11-08 自 twostraws/Swift-Agent-Skills 索引精选安装)
 
 ## 1. 目标
@@ -88,8 +88,8 @@
 | 1 | swift-testing-pro | 已完成: LogFileSink 实例化 + ThrottledLogger 注入闭包 + 三处日志内容断言改内存捕获; 参数化收敛 4 组同构用例 (17 声明 -> 4, 用例 273 -> 278); 断言完整性 (4 处折叠等待改两步须、4 处 guard+#expect(Bool(false)) 改 try #require、2 处 fixture 写入加存在性断言); 补 4 个 OpenCodeClientError 错误身份测试; 说明: 该库除 OpenCodeClientError 外无 throwing API, `#expect(throws:)` 不适用于 Optional/Bool 失败通道; 拆 `--no-parallel` 已拆出至 §5.1 | 达成: `make test` 绿, 260 声明 / 282 用例 (基线 273 用例); Sources 行覆盖在噪声带内; 所触文件 missed 不增 (Log 1 / ThrottledLogger 0 / AeroSpace 8) |
 | 2 | observability | 已完成: subsystem local.fanzhen.ribbon + agent/workspace/media/status 四个 os.Logger; 25 处失败点与生命周期点新增结构化 emission (文件日志原样保留, 双写); 4 个 Points of Interest signpost (WorkspaceRefresh / NowPlayingCLI / VolumeAppleScript / 事件流 connect-disconnect); 隐私分类按值标注 (host/port/pid/计数公开, app 名/会话标题/输入源名/家目录路径私有) | 达成: make lint 绿; make test 261 声明 / 283 用例全过 (260 + 1 个固定子系统与分类字面量的测试); 文件日志契约不变 (log( 调用点仍为 85 处); 统一日志与 signpost 已用 log show 实测可见 |
 | 3 | swift-concurrency-pro | 已完成: 按 hotspots 清单做全仓审计 (9 个 @unchecked Sendable / 4 个 Task / 12 把锁 / 全部并发不变量注释); 修复 2 个 P1 (send 的 completion 无 running 过滤、CF observer passUnretained 的 UAF 面) + 3 项卫生 (onUpdate 改 init 注入 let、WorkspaceMonitor 两条 change 路径加 stopping 检查、buffer 不变量补注释); 新增回归测试先证无修复时失败; EventStream 的 Sendable/var 回调与三个无句柄 Task 记为遗留 | 达成: 新增 @unchecked Sendable 0 个 (仍为 9); 全仓无跨 await 持锁 (审计确认, 非仅注释); make lint 绿; make test 262 声明 / 284 用例全过 |
-| 4 | swift-api-design-guidelines-skill | RibbonCore public 符号 + RibbonBridge `include/` C 头的命名/参数标签/文档注释 | 纯增量, lint+test 绿 |
-| 5 | swift-architecture-skill | 只读 references/selection-guide.md、coordinator.md、concurrency.md 作诊断, 判断三层划分与 TouchBarController+Agent 的 coordinator 角色; 不重构 | 产出一段诊断结论记入本文件, 无代码改动 |
+| 4 | swift-api-design-guidelines-skill | 已完成: 8 个 public 声明补文档注释 (技能硬规则: 每个声明都要有); 收窄 TouchBarController.init 为 internal (仅模块内与 @testable 测试使用); 命名/参数标签/暴露泄漏三项审查零发现 (无布尔参数、无非标准缩写、无 public API 返回非 public 类型); C 头两个符号是 Apple 私有选择器, 不可改 | 达成: make lint 绿; make test 262 声明全过; public 声明 8 -> 7 |
+| 5 | swift-architecture-skill | 只读 references/selection-guide.md、coordinator.md、concurrency.md 作诊断, 判断三层划分与 TouchBarController+Agent 的 coordinator 角色; 不重构 | 达成: §10 诊断结论已记录, 无代码改动 |
 | 6 | swift-format-style | ColorHex/电量/亮度等数值格式化改 `.formatted()`; ClockFormat.swift 有意保留 `DateFormatter` 并加注释说明 (clock.json 允许任意 ICU pattern, `Date.FormatStyle` 不接受原始 ICU 串) | lint+test 绿; 时钟行为逐字节不变 |
 | 7 | appkit-accessibility-auditor | 对 BarViews / AgentChipView / AgentCardView 跑 P0-P2 审计; chip 截断名以完整名作 AX label; 审批卡 允许/总是/拒绝 三按钮 AX label | P0 清零; 不新增 TCC 请求 |
 | 8 | writing-for-interfaces | 菜单项 (Re-present/Refresh/Show-Hide Control Strip/Agent Chip/IME Color/Clock Format)、chip `?` 占位、审批卡文案、日志错误文案 | 文案评审通过; 可与任意阶段并行 |
@@ -155,3 +155,14 @@
 - send / reconcile / pollActiveSessions 三个 Task 仍无句柄与取消 (结果已被 running / reconcileGeneration / activePollInFlight 过滤)
 - `ServiceLocator.stop()` 后队列中回调仍可能执行 (源码已声明)
 - 多处在持锁期间做文件 I/O (`LogFileSink` / `JSONConfigStore` / `ClockFormat` / `InputSource` / `Media`); 当前无反向锁序, 靠手写规则维持
+
+## 10. 架构诊断结论 (2026-11-08, 阶段 5)
+
+依据: swift-architecture-skill 的 selection-guide / coordinator / concurrency 三篇, 对照全仓结构快照。结论: 不做架构改造。
+
+- 目标分层已合理: RibbonBridge (C 私有 API 声明) -> RibbonCore (40 个根文件 + OpenCode/ 10 个) -> Ribbon (17 行 main.swift)。改动只应发生在层内, 不应引入新 target。
+- OpenCode/ 是"纯核心 + 命令式外壳": AgentEvent / AgentSessionStore / AgentReconciler / AgentCardMachine / AgentBridgeHealth / ServiceEndpoint 全是纯函数且时间可注入, 只有 OpenCodeClient (网络) / EventStream (网络+状态) / ServiceLocator (文件系统) / AgentBridge (编排) 有副作用。这是 262 个测试声明能存在的原因, 必须保持这条边界。
+- TouchBarController 已经承担了 Coordinator 的角色: 它拥有生命周期、视图树、计时器和各特性接线, 而布局数学 (BarLayout / ChipUpdate / MediaPollPolicy) 与 agent 决策 (AgentSessionStore / AgentCardMachine) 已抽成纯类型。技能手册里的 MVVM / MVI / TCA / VIPER 是 SwiftUI/UIKit 语境, 不适用 AppKit + Touch Bar, 强推会为用技能而改代码。
+- 不建议新增 view model 层: AppKit 视图 + 纯布局数学已经可测, 加一层只增加跳转。
+- 可选拆分 (只在文件继续变长时再做, 当前不做): EventStream.swift 565 行内含 SSE 分帧 / 重试策略 / 类型预筛 / 空闲检测四件事 (SSELineParser 与 StreamRetryPolicy 已是独立类型, 仅是同居一文件); AppDelegate 混合状态栏菜单构造与生命周期; TouchBarController+AgentCard 338 行混合 UI 挂载、回复提交、进程激活与 10Hz tick。
+- C 桥头文件 (RibbonBridge.h, 7 行) 的两个符号是 Apple 私有选择器, 命名由系统决定, 无可改; 风险已在 README "Known limits" 声明。

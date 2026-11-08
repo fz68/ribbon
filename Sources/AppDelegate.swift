@@ -1,6 +1,9 @@
 import Cocoa
 
+/// The app delegate. It owns the Touch Bar controller and the menu-bar status item.
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// The controller the app presents for its whole lifetime, and the one `main.swift` shuts
+    /// down on exit.
     public let controller = TouchBarController()
     private var statusItem: NSStatusItem?
     private var controlStripItem: NSMenuItem?
@@ -19,6 +22,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         ("h:mm a", "en_US"),
     ]
 
+    /// Builds the menu-bar status item, wires the controller callbacks to it, and presents the
+    /// bar a moment after launch so the launch path stays short.
     public func applicationDidFinishLaunching(_ notification: Notification) {
         log("launched pid=\(ProcessInfo.processInfo.processIdentifier)")
         setupStatusItem()
@@ -35,6 +40,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Shuts the controller down, which stops its timers, monitors and agent bridge and dismisses
+    /// the bar.
     public func applicationWillTerminate(_ notification: Notification) {
         controller.shutdown()
     }

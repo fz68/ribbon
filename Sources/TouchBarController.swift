@@ -20,6 +20,8 @@ private func loadDFRCloseBox() -> (@convention(c) (Bool) -> Void)? {
     return unsafeBitCast(symbol, to: (@convention(c) (Bool) -> Void).self)
 }
 
+/// Owns the Touch Bar view tree, its timers, and the workspace, media and agent features.
+/// Each feature lives in a `TouchBarController+*.swift` extension.
 public final class TouchBarController: NSObject, NSTouchBarDelegate {
     let touchBar = NSTouchBar()
     lazy var closeBoxFn: (@convention(c) (Bool) -> Void)? = loadDFRCloseBox()
@@ -165,7 +167,9 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
     /// Called whenever the selected input source changes, so the status menu can follow.
     var onInputSourceChanged: ((String, String) -> Void)?
 
-    public override init() {
+    /// Creates the controller and starts its monitoring, timers and watchers. Nothing is put on
+    /// screen here; `present()` does that.
+    override init() {
         super.init()
         touchBar.delegate = self
         touchBar.defaultItemIdentifiers = itemIdentifiers
@@ -265,6 +269,8 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         }
     }
 
+    /// Tears down the observers, timers, watchers, monitoring and agent bridge, then dismisses the
+    /// bar; repeat calls return at once because the first one sets `didShutdown`.
     public func shutdown() {
         guard !didShutdown else { return }
         didShutdown = true
@@ -380,6 +386,8 @@ public final class TouchBarController: NSObject, NSTouchBarDelegate {
         log("front app=\(name)")
     }
 
+    /// The `NSTouchBarDelegate` witness that vends this bar's items by identifier.
+    /// - Returns: The container item for `local.ribbon.main`, or `nil` for any other identifier.
     public func touchBar(_ touchBar: NSTouchBar, makeItemForIdentifier identifier: NSTouchBarItem.Identifier) -> NSTouchBarItem? {
         guard identifier == NSTouchBarItem.Identifier("local.ribbon.main") else { return nil }
         let item = NSCustomTouchBarItem(identifier: identifier)
