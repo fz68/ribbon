@@ -2,6 +2,31 @@ import Cocoa
 import Testing
 @testable import RibbonCore
 
+/// One accepted-reply sentence, with a readable name so a failure names the
+/// decision instead of a case index.
+struct CardAnnouncementCase: Sendable, CustomTestStringConvertible {
+    let name: String
+    let answer: AgentCardAnswer
+    let expected: String
+
+    var testDescription: String { name }
+}
+
+private let cardAnnouncementCases = [
+    CardAnnouncementCase(name: "allow once",
+                         answer: .permission(.once),
+                         expected: "Allowed"),
+    CardAnnouncementCase(name: "always",
+                         answer: .permission(.always),
+                         expected: "Always allowed"),
+    CardAnnouncementCase(name: "deny",
+                         answer: .permission(.reject),
+                         expected: "Denied"),
+    CardAnnouncementCase(name: "form answer",
+                         answer: .form(option: "go"),
+                         expected: "Answer sent"),
+]
+
 /// The AX strings that are pure data, plus the few view properties that can be
 /// read back without a Touch Bar.
 ///
@@ -53,6 +78,12 @@ import Testing
                                      directory: "/x/ribbon")
         #expect(target.accessibilityIdentity == "ribbon, request 2 of 3",
                 "the identity cell spells out what the drawn \"2/3\" abbreviates")
+    }
+
+    @Test(arguments: cardAnnouncementCases)
+    func testAcceptedReplyAnnouncesTheOutcome(_ testCase: CardAnnouncementCase) {
+        #expect(testCase.answer.successAnnouncement == testCase.expected,
+                "a decision accepted by the service says what it did, so a screen-reader user gets a confirmation")
     }
 
     // MARK: - Media transport

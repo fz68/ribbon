@@ -175,8 +175,9 @@ extension TouchBarController {
     /// Posts one VoiceOver announcement.
     ///
     /// Only ever called from a discrete transition - a chip state change, a card
-    /// opening, a failed reply. Never call it from the 10 Hz animation tick or a
-    /// poll, which would repeat the same sentence at the timer's frequency.
+    /// opening, an accepted reply, a failed reply. Never call it from the 10 Hz
+    /// animation tick or a poll, which would repeat the same sentence at the
+    /// timer's frequency.
     func announce(_ message: String, element: NSView) {
         NSAccessibility.post(element: element,
                              notification: .announcementRequested,

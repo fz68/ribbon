@@ -72,6 +72,24 @@ enum AgentCardAnswer: Equatable {
     case form(option: String)
 }
 
+extension AgentCardAnswer {
+    /// What VoiceOver hears once the service accepts this reply.
+    ///
+    /// The answer already knows whether it is a decision or a form reply, so the
+    /// two kinds branch here instead of at the call site. Pure: the four
+    /// sentences are pinned by `AccessibilityCopyTests` rather than by listening
+    /// to a live assistive client. The option value is never part of it - it is
+    /// form content.
+    var successAnnouncement: String {
+        switch self {
+        case .permission(.once): return "Allowed"
+        case .permission(.always): return "Always allowed"
+        case .permission(.reject): return "Denied"
+        case .form: return "Answer sent"
+        }
+    }
+}
+
 /// Where a chip tap should jump: a session, not a request.
 ///
 /// Kept apart from `AgentCardTarget` so a jump can never be mistaken for a
@@ -111,6 +129,16 @@ struct AgentCardMachine {
         case .failed(let target, _, _):
             return target
         }
+    }
+
+    /// The answer waiting on the service, while a submit is in flight; nil in
+    /// every other phase.
+    ///
+    /// Read by the success path before `submitted` closes the card: a duplicate
+    /// completion then finds nil here and announces nothing a second time.
+    var submittingAnswer: AgentCardAnswer? {
+        guard case .submitting(_, let answer) = phase else { return nil }
+        return answer
     }
 
     /// The index the card should show after a long-press skip.

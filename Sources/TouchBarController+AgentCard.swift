@@ -123,9 +123,10 @@ extension TouchBarController {
 
     /// Shared submit plumbing for both card kinds.
     ///
-    /// The machine is already `.submitting` when this runs; success closes the
-    /// card, failure leaves it open for one flash and no automatic retry. A late
-    /// completion for a card that was dismissed or race-closed is ignored.
+    /// The machine is already `.submitting` when this runs; success announces the
+    /// outcome and closes the card, failure leaves it open for one flash and no
+    /// automatic retry. A late completion for a card that was dismissed or
+    /// race-closed is ignored, announcement included.
     private func submitAgentCard(send: @escaping (AgentBridge,
                                                   @escaping (Bool) -> Void) -> Void) {
         renderAgentCard()
@@ -140,9 +141,18 @@ extension TouchBarController {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if succeeded {
+                    // Read the accepted answer before `submitted` closes the
+                    // phase; that is the only moment it is still there, which is
+                    // also why a repeated completion announces nothing.
+                    let confirmation = self.agentCardMachine.submittingAnswer?.successAnnouncement
                     // Success closes the card. The next request needs a new chip
                     // tap; the card never reopens by itself.
                     if self.agentCardMachine.submitted(now: Date()) {
+                        // Discrete transition only: one submission, one sentence,
+                        // posted on the card before it is hidden.
+                        if let confirmation {
+                            self.announce(confirmation, element: self.agentCard)
+                        }
                         self.closeAgentCardUI()
                     }
                 } else {
