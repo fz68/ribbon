@@ -113,6 +113,9 @@ final class WorkspaceMonitor: @unchecked Sendable {
         process.arguments = subscribeArguments
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
+        // Mutated from the readability handler below. Safe without a lock only
+        // because Foundation serializes the invocations of one `FileHandle`'s
+        // readability handler, so no two appends or line splits can interleave.
         var buffer = Data()
         // The subscribe handshake is a multi-line pretty-printed envelope, so
         // per-line JSON validation would swallow it; a poke is enough because
@@ -139,7 +142,13 @@ final class WorkspaceMonitor: @unchecked Sendable {
                         continue
                     }
                 }
-                DispatchQueue.main.async { change() }
+                // The line was parsed on the pipe queue, but `stop()` may have
+                // run since. `stopping` is owned by `queue`, so the check hops
+                // there before the refresh reaches the main thread.
+                self.queue.async {
+                    guard !self.stopping else { return }
+                    DispatchQueue.main.async { change() }
+                }
             }
         }
         process.terminationHandler = { finished in
@@ -182,7 +191,15 @@ final class WorkspaceMonitor: @unchecked Sendable {
         pollTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
-        timer.setEventHandler { change() }
+        // The timer fires on main and `stopping` belongs to `queue`, so each tick
+        // hops to the serial queue to check liveness before calling out.
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.queue.async {
+                guard !self.stopping else { return }
+                DispatchQueue.main.async { change() }
+            }
+        }
         timer.resume()
         pollTimer = timer
         RibbonCore.log("monitoring via polling")

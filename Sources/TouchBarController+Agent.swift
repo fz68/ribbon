@@ -10,14 +10,13 @@ extension TouchBarController {
         // bridge, not even when the bar is presented.
         guard AgentConfig.isEnabled else { return }
         guard agentBridge == nil else { return }
-        let bridge = AgentBridge()
-        bridge.onUpdate = { [weak self] snapshot in
+        let bridge = AgentBridge(onUpdate: { [weak self] snapshot in
             // The bridge publishes on its own queue; every view change is a main
             // thread change.
             DispatchQueue.main.async {
                 self?.applyAgentUpdate(snapshot: snapshot)
             }
-        }
+        })
         agentBridge = bridge
         bridge.start()
     }

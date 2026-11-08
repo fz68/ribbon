@@ -44,8 +44,8 @@ struct AgentSnapshot: Equatable {
 /// with heartbeats, and that connection is proof enough that the chip should
 /// stay.
 ///
-/// Callbacks (`onUpdate` on this class, and the locator/stream closures) are set
-/// once before `start()` and never mutated afterwards.
+/// Callbacks (`onUpdate`, injected through `init`, and the locator/stream
+/// closures) are set once at construction and never mutated afterwards.
 ///
 /// Sendability: every mutable property is touched only from `queue`, and the
 /// only things crossing into a `Task` are immutable lets plus the captured
@@ -55,7 +55,10 @@ final class AgentBridge: @unchecked Sendable {
     /// Publishes every recomputed snapshot on the bridge queue. Identical
     /// snapshots can arrive repeatedly (the health tick republishes); the
     /// consumer is expected to ignore them.
-    var onUpdate: ((AgentSnapshot) -> Void)?
+    ///
+    /// A `let` on purpose: it is read on the bridge queue, so it is injected at
+    /// construction instead of being assigned from the main thread afterwards.
+    let onUpdate: ((AgentSnapshot) -> Void)?
 
     private let locator: ServiceLocator
     private let stream: EventStream
@@ -87,12 +90,14 @@ final class AgentBridge: @unchecked Sendable {
          stream: EventStream = EventStream(),
          session: URLSession = .shared,
          now: @escaping () -> Date = Date.init,
-         queue: DispatchQueue = DispatchQueue(label: "local.ribbon.opencode.bridge")) {
+         queue: DispatchQueue = DispatchQueue(label: "local.ribbon.opencode.bridge"),
+         onUpdate: ((AgentSnapshot) -> Void)? = nil) {
         self.locator = locator
         self.stream = stream
         self.session = session
         self.now = now
         self.queue = queue
+        self.onUpdate = onUpdate
 
         locator.onEndpoint = { [weak self] endpoint in
             guard let self else { return }
@@ -215,7 +220,13 @@ final class AgentBridge: @unchecked Sendable {
                 } catch {
                     succeeded = false
                 }
-                queue.async { result.run(succeeded) }
+                queue.async { [weak self] in
+                    // A result that lands after `stop()` is dropped: the watch
+                    // is over, so a reply or interrupt answered late must not
+                    // drive the card machine from a dead bridge.
+                    guard let self, self.running else { return }
+                    result.run(succeeded)
+                }
             }
         }
     }

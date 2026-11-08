@@ -35,8 +35,8 @@
 
 - GCD-first: serial `DispatchQueue` + main queue hop 为主
 - async/await 只存在于 `Sources/OpenCode/` 三文件 (OpenCodeClient / AgentBridge / EventStream); 新代码不要把 GCD 类型大面积改 async, 在已有 async 边界内扩展
-- 不新增 `@unchecked Sendable` (现存 9 处, 含 2026-11-08 新增的 `LogFileSink`: 全部状态由单一 NSLock 守卫; 待阶段 3 收敛)
-- 禁止跨 `await` 持 `NSLock` (见 EventStream.swift:306 注释)
+- 不新增 `@unchecked Sendable` (现存 9 处; 2026-11-08 审计确认其可变属性全部在锁或串行队列守卫内, 含 `LogFileSink` 的单一 NSLock); 新增前必须能证明线程安全
+- 禁止跨 `await` 持 `NSLock`: 需要锁的辅助函数写成同步函数, 由 async 上下文调用 (见 EventStream.swift 约 336 行的注释); 2026-11-08 审计确认全仓无违例
 - Package.swift 是 swift-tools-version 5.9 / Swift 5 语言模式, 未开 strict concurrency - 开了会炸现存 `@unchecked` 位点
 
 ## 平台与 API 边界

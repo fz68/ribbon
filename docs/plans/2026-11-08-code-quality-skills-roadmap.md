@@ -3,7 +3,7 @@
 日期: 2026-11-08
 仓库: ribbon (本仓库)
 基线提交: 64e7bb8 (refactor: fold the monitor wiring in, drop the dead members, share the test helpers)
-状态: 阶段 2 完成 (2026-11-08) — 统一日志 + 4 组 signpost 已落地; 文件日志契约不变; 已知 flake 见 §8; 阶段 3 待启动
+状态: 阶段 3 完成 (2026-11-08) — 并发审计落地并修掉 2 个 P1; 9 个 @unchecked Sendable 未增; 阶段 4 待启动
 关联: `.opencode/skills/` 下 9 个技能 (2026-11-08 自 twostraws/Swift-Agent-Skills 索引精选安装)
 
 ## 1. 目标
@@ -87,7 +87,7 @@
 | 0 | (无技能) | AGENTS.md; 基线 (已测全, §3.2); 工具链修复 (已解决, §3.3) | AGENTS.md 存在; 基线表可复现 |
 | 1 | swift-testing-pro | 已完成: LogFileSink 实例化 + ThrottledLogger 注入闭包 + 三处日志内容断言改内存捕获; 参数化收敛 4 组同构用例 (17 声明 -> 4, 用例 273 -> 278); 断言完整性 (4 处折叠等待改两步须、4 处 guard+#expect(Bool(false)) 改 try #require、2 处 fixture 写入加存在性断言); 补 4 个 OpenCodeClientError 错误身份测试; 说明: 该库除 OpenCodeClientError 外无 throwing API, `#expect(throws:)` 不适用于 Optional/Bool 失败通道; 拆 `--no-parallel` 已拆出至 §5.1 | 达成: `make test` 绿, 260 声明 / 282 用例 (基线 273 用例); Sources 行覆盖在噪声带内; 所触文件 missed 不增 (Log 1 / ThrottledLogger 0 / AeroSpace 8) |
 | 2 | observability | 已完成: subsystem local.fanzhen.ribbon + agent/workspace/media/status 四个 os.Logger; 25 处失败点与生命周期点新增结构化 emission (文件日志原样保留, 双写); 4 个 Points of Interest signpost (WorkspaceRefresh / NowPlayingCLI / VolumeAppleScript / 事件流 connect-disconnect); 隐私分类按值标注 (host/port/pid/计数公开, app 名/会话标题/输入源名/家目录路径私有) | 达成: make lint 绿; make test 261 声明 / 283 用例全过 (260 + 1 个固定子系统与分类字面量的测试); 文件日志契约不变 (log( 调用点仍为 85 处); 统一日志与 signpost 已用 log show 实测可见 |
-| 3 | swift-concurrency-pro | 先审计产出 findings 清单再动手; 收敛约 8 处 `@unchecked Sendable`; EventStream 裸 `Task {}` → 结构化并发 + 真实取消传播; EventStream.swift:306 "never hold NSLock across await" 从注释升级为可执行约束 | 0 个新增 `@unchecked Sendable`; lint+test 绿; Touch Bar 手工冒烟 |
+| 3 | swift-concurrency-pro | 已完成: 按 hotspots 清单做全仓审计 (9 个 @unchecked Sendable / 4 个 Task / 12 把锁 / 全部并发不变量注释); 修复 2 个 P1 (send 的 completion 无 running 过滤、CF observer passUnretained 的 UAF 面) + 3 项卫生 (onUpdate 改 init 注入 let、WorkspaceMonitor 两条 change 路径加 stopping 检查、buffer 不变量补注释); 新增回归测试先证无修复时失败; EventStream 的 Sendable/var 回调与三个无句柄 Task 记为遗留 | 达成: 新增 @unchecked Sendable 0 个 (仍为 9); 全仓无跨 await 持锁 (审计确认, 非仅注释); make lint 绿; make test 262 声明 / 284 用例全过 |
 | 4 | swift-api-design-guidelines-skill | RibbonCore public 符号 + RibbonBridge `include/` C 头的命名/参数标签/文档注释 | 纯增量, lint+test 绿 |
 | 5 | swift-architecture-skill | 只读 references/selection-guide.md、coordinator.md、concurrency.md 作诊断, 判断三层划分与 TouchBarController+Agent 的 coordinator 角色; 不重构 | 产出一段诊断结论记入本文件, 无代码改动 |
 | 6 | swift-format-style | ColorHex/电量/亮度等数值格式化改 `.formatted()`; ClockFormat.swift 有意保留 `DateFormatter` 并加注释说明 (clock.json 允许任意 ICU pattern, `Date.FormatStyle` 不接受原始 ICU 串) | lint+test 绿; 时钟行为逐字节不变 |
@@ -128,3 +128,30 @@
 
 - 真实攻击面是 ToolLocator.swift 的 PATH/Homebrew 前缀查找与 ProcessRunner.swift 的子进程调用; 9 个技能无一覆盖, 依赖人工 review + 阶段 3 的 hotspots 清单兜底
 - 测试套件存在既有 flake (阶段 2 期间观测): WorkspaceBackendTests.testMonitoringCallsAreSafeWithoutAStream 在约 8 次全量运行中失败 1 次 (nehir 轮询计数 10s 内保持 0), 另有 1 次全量运行挂起约 15 分钟被终止; HEAD 基线 5/5 绿、该测试单独运行 8/8 绿, 判断为进程启动/重启竞态而非阶段 2 引入, 需单独立 ticket
+
+## 9. 并发审计结论 (2026-11-08)
+
+依据: swift-concurrency-pro 的 hotspots 清单 + 全仓事实测绘 (9 个 `@unchecked Sendable`、4 个 `Task {}`、12 把锁、全部并发不变量注释)。GCD-first 按该技能口径不属问题 (framework interop / 同步路径), 故不改造为 async。
+
+已修复:
+
+| 缺陷 | 位置 | 事实 | 处置 |
+|---|---|---|---|
+| 迟到的回复驱动已停止的 bridge | `OpenCode/AgentBridge.swift` send 的 completion | 三个 Task 不存句柄、永不取消; completion 无 running 过滤, stop() 后仍执行并驱动卡片状态机 | 加 running 过滤; 新增 `testReplyCompletionIsDroppedAfterStop` (先证无修复时必然失败) |
+| CF observer 的 use-after-free 面 | `InputSourceWatcher.swift` | passUnretained + 投递线程先解引用再跳主队列 | 改 passRetained, stop() 精确释放一次 (flag 门控, 幂等), 三个投递路径加 isRunning |
+| 唯一无守卫的跨队列属性 | `OpenCode/AgentBridge.swift` onUpdate | 主线程写、bridge 队列读, 仅靠注释 | 改 init 注入的 let |
+| stop() 后仍触发刷新 | `WorkspaceMonitor.swift` | pipe handler 与 poll timer 的 change() 无 stopping 检查 | 两条路径在 queue 上检查 stopping |
+| buffer 不变量未声明 | `WorkspaceMonitor.swift` | readabilityHandler 内捕获的 buffer 依赖 Foundation 对单 FileHandle 的串行保证 | 补注释, 无代码改动 |
+
+审计确认 (无需改动):
+
+- 全仓**无任何跨 await 持锁**: EventStream 只在同步 helper 内取锁, 事实与注释一致
+- 除 onUpdate (已修) 外, 9 个 @unchecked Sendable 的所有可变属性都在锁或串行队列守卫内
+- 锁序 `stateLock` -> `JSONConfigStore.lock` -> `builtInLock` 无反向路径; `InputSource` 的 leaf lock 规则仍被遵守
+
+遗留 (记录不修):
+
+- `EventStream` 未声明 Sendable 却跨 await 捕获 self, 其三个回调是 `var` (set-once 仅注释); 若要标注 Sendable, 需先把回调改成 init 注入
+- send / reconcile / pollActiveSessions 三个 Task 仍无句柄与取消 (结果已被 running / reconcileGeneration / activePollInFlight 过滤)
+- `ServiceLocator.stop()` 后队列中回调仍可能执行 (源码已声明)
+- 多处在持锁期间做文件 I/O (`LogFileSink` / `JSONConfigStore` / `ClockFormat` / `InputSource` / `Media`); 当前无反向锁序, 靠手写规则维持

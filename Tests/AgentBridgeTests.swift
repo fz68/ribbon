@@ -136,14 +136,17 @@ private func writeService(_ name: String, _ text: String) {
     try? Data(text.utf8).write(to: URL(fileURLWithPath: TestTemp.path(name)))
 }
 
-private func makeBridge(name: String, session: URLSession) -> AgentBridge {
+private func makeBridge(name: String,
+                        session: URLSession,
+                        onUpdate: ((AgentSnapshot) -> Void)? = nil) -> AgentBridge {
     AgentBridge(locator: ServiceLocator(path: TestTemp.path(name)),
                 stream: EventStream(session: session,
                                     idleTimeout: 5,
                                     retryPolicy: StreamRetryPolicy(initialDelay: 0.05,
                                                                   maximumDelay: 0.5)),
                 session: session,
-                now: { fixedNow })
+                now: { fixedNow },
+                onUpdate: onUpdate)
 }
 
 private let serviceJSON =
@@ -163,8 +166,8 @@ private let lateForm =
     @Test func testNoServiceMeansNoChip() {
         writeService("agent-bridge-none.json", "42")
         let box = ABBox<[AgentSnapshot]>([])
-        let bridge = makeBridge(name: "agent-bridge-none.json", session: abSession())
-        bridge.onUpdate = { snapshot in box.withLock { $0.append(snapshot) } }
+        let bridge = makeBridge(name: "agent-bridge-none.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
         bridge.start()
         #expect(waitUntil(timeout: 5) { !box.value.isEmpty },
                 "a read of the missing registration publishes once")
@@ -193,8 +196,8 @@ private let lateForm =
         }
         defer { ABStub.uninstall() }
         let box = ABBox<[AgentSnapshot]>([])
-        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession())
-        bridge.onUpdate = { snapshot in box.withLock { $0.append(snapshot) } }
+        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
         bridge.start()
         #expect(waitUntil(timeout: 5) {
             box.value.last.map { $0.triage.count == 3 && $0.formTriage.isEmpty } ?? false
@@ -229,8 +232,8 @@ private let lateForm =
         defer { ABStub.uninstall() }
         let box = ABBox<[AgentSnapshot]>([])
         let results = ABBox<[Bool]>([])
-        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession())
-        bridge.onUpdate = { snapshot in box.withLock { $0.append(snapshot) } }
+        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
         bridge.start()
         #expect(waitUntil(timeout: 5) { box.value.last?.visible == true },
                 "the endpoint plus stream contact makes the chip visible")
@@ -278,8 +281,8 @@ private let lateForm =
         defer { ABStub.uninstall() }
         let box = ABBox<[AgentSnapshot]>([])
         let results = ABBox<[Bool]>([])
-        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession())
-        bridge.onUpdate = { snapshot in box.withLock { $0.append(snapshot) } }
+        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
         bridge.start()
         #expect(waitUntil(timeout: 5) { box.value.last?.visible == true },
                 "the endpoint plus stream contact makes the chip visible")
@@ -313,6 +316,57 @@ private let lateForm =
         bridge.stop()
     }
 
+    /// A reply answered after `stop()` must not drive the card.
+    ///
+    /// The completion used to land unconditionally, so a late result from a dead
+    /// watch still moved the card machine. The stub holds the response until the
+    /// bridge has provably stopped, which makes the ordering deterministic
+    /// instead of a race: `stop()` publishes its off snapshot after clearing
+    /// `running`, so seeing that snapshot means the filter must drop the answer.
+    @Test func testReplyCompletionIsDroppedAfterStop() {
+        writeService("agent-bridge-service.json", serviceJSON)
+        let seen = ABBox(false)
+        let release = DispatchSemaphore(value: 0)
+        ABStub.install { request in
+            switch request.url?.path ?? "" {
+            case "/api/event": return json(": heartbeat\n\n")
+            case "/api/session/active": return json(#"{"data":{}}"#)
+            case "/api/session": return json("[]")
+            case "/api/session/ses_1/permission/per_1/reply":
+                // Record the arrival, then stall the answer. The timeout only
+                // keeps a failing test from hanging the suite.
+                seen.withLock { $0 = true }
+                _ = release.wait(timeout: .now() + 10)
+                return ABReply(status: 200)
+            default: return ABReply()
+            }
+        }
+        defer {
+            release.signal()
+            ABStub.uninstall()
+        }
+        let box = ABBox<[AgentSnapshot]>([])
+        let results = ABBox<[Bool]>([])
+        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
+        bridge.start()
+        #expect(waitUntil(timeout: 5) { box.value.last?.visible == true },
+                "the bridge is up before the reply is sent")
+        bridge.reply(sessionID: "ses_1", requestID: "per_1", decision: .always) { ok in
+            results.withLock { $0.append(ok) }
+        }
+        #expect(waitUntil(timeout: 5) { seen.value },
+                "the stub holds the reply request")
+        bridge.stop()
+        #expect(waitUntil(timeout: 5) { box.value.contains { $0.chip == .off && !$0.visible } },
+                "the bridge published its stopped state before the answer is released")
+        release.signal()
+        #expect(!waitUntil(timeout: 2) { !results.value.isEmpty },
+                "a reply completion that lands after stop() is dropped")
+        #expect(ABStub.recorded(path: "/api/session/ses_1/permission/per_1/reply").count == 1,
+                "the request itself was still sent, only the completion is dropped")
+    }
+
     @Test func testInterruptIsFireAndForget() {
         writeService("agent-bridge-service.json", serviceJSON)
         ABStub.install { request in
@@ -325,8 +379,8 @@ private let lateForm =
         }
         defer { ABStub.uninstall() }
         let box = ABBox<[AgentSnapshot]>([])
-        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession())
-        bridge.onUpdate = { snapshot in box.withLock { $0.append(snapshot) } }
+        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
         bridge.start()
         #expect(waitUntil(timeout: 5) { box.value.last?.visible == true },
                 "the bridge is up before the interrupt")
@@ -361,8 +415,8 @@ private let lateForm =
         }
         defer { ABStub.uninstall() }
         let box = ABBox<[AgentSnapshot]>([])
-        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession())
-        bridge.onUpdate = { snapshot in box.withLock { $0.append(snapshot) } }
+        let bridge = makeBridge(name: "agent-bridge-service.json", session: abSession(),
+                                onUpdate: { snapshot in box.withLock { $0.append(snapshot) } })
         bridge.start()
         #expect(waitUntil(timeout: 5) { box.value.last?.chip == .busy(count: 1) },
                 "the first successful fetch marks one running group busy")

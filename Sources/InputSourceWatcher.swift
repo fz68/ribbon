@@ -19,6 +19,13 @@ final class InputSourceWatcher {
     private var loggedNotificationDelivered = false
     private var loggedNotificationMissing = false
     private var isRunning = false
+    /// Whether the Carbon observer currently holds a retain on this object.
+    ///
+    /// The context is registered with `passRetained`, so exactly one matching
+    /// `release` is owed. This flag is the single record of that debt: it is
+    /// only ever read or written on the main thread, the same thread `start()`
+    /// and `stop()` run on.
+    private var notificationRegistered = false
 
     /// Starts watching. Must be called on the main thread.
     func start() {
@@ -35,13 +42,26 @@ final class InputSourceWatcher {
     }
 
     /// Stops watching and removes the Carbon observer.
+    ///
+    /// Idempotent: only the first call tears anything down, so the observer's
+    /// retain is released exactly once. There is no `deinit` counterpart on
+    /// purpose - a registered watcher is retained by the notification centre
+    /// context, so it cannot deinitialize while the registration is live; the
+    /// only path out is this method, which unregisters before releasing.
     func stop() {
         guard isRunning else { return }
         isRunning = false
         pollTimer?.invalidate()
         pollTimer = nil
+        guard notificationRegistered else { return }
+        notificationRegistered = false
         let context = Unmanaged.passUnretained(self).toOpaque()
+        // Remove first: the observer must not be able to deliver a callback that
+        // unretains this object while the context is still registered.
         CFNotificationCenterRemoveObserver(CFNotificationCenterGetDistributedCenter(), context, nil, nil)
+        // Last statement of the method: this drops the retain from
+        // `registerNotification`, and nothing below may touch `self` afterwards.
+        Unmanaged<InputSourceWatcher>.fromOpaque(context).release()
     }
 
     /// Registers the Carbon notification. It is the preferred signal but it is
@@ -51,7 +71,10 @@ final class InputSourceWatcher {
             log("ime notification unavailable, poll only")
             return
         }
-        let context = Unmanaged.passUnretained(self).toOpaque()
+        // Retained so a callback that arrives while the owner is releasing this
+        // object still has a live instance to unretain; `stop()` releases it.
+        let context = Unmanaged.passRetained(self).toOpaque()
+        notificationRegistered = true
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDistributedCenter(),
             context,
@@ -90,12 +113,15 @@ final class InputSourceWatcher {
     /// The enabled set changes when an IME is installed or removed, which can
     /// reassign the round-robin palette colours without the selection moving.
     private func handleEnabledSourcesChanged() {
+        // A callback can already be on its way to main when `stop()` runs.
+        guard isRunning else { return }
         InputSource.invalidateBuiltInCache()
         guard let current = InputSource.current else { return }
         onChange?(current.id, current.name)
     }
 
     private func handleNotification() {
+        guard isRunning else { return }
         lastNotificationAt = Date()
         if !loggedNotificationDelivered {
             loggedNotificationDelivered = true
@@ -120,6 +146,7 @@ final class InputSourceWatcher {
     }
 
     private func commitPendingChange() {
+        guard isRunning else { return }
         guard let current = pendingChange else { return }
         pendingChange = nil
         guard current.id != lastID else { return }
