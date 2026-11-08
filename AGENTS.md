@@ -18,7 +18,7 @@
 
 - 只用 swift-testing (`import Testing`), 禁止 XCTest
 - 错误路径断言用 `#expect(throws:)`; 可失败前置用 `try #require()`
-- 现状 35/38 个 suite 标了 `@Suite(.serialized)` (历史原因: 配置路径等进程级全局, 见路线图 §5.1); `LogTests` / `ThrottledLoggerTests` 已解除; 新测试尽量不依赖进程级全局状态
+- 现状 36 个 suite 标了 `@Suite(.serialized)` (历史原因: 配置路径等进程级全局, 见路线图 §5.1); `LogTests` / `ThrottledLoggerTests` 已解除; 新测试尽量不依赖进程级全局状态
 - 同构用例用 `@Test(arguments:)`: 用例载体类型需 `Sendable` + `CustomTestStringConvertible` (否则失败只报 "case N of M", 丢失场景可读性); 注意 runner 的 `Test run with N tests` 统计声明数而非用例数
 - 断言日志内容时注入 `ThrottledLogger { ... }` 或自建 `LogFileSink`, 不要读进程级日志文件
 - 确需改 `Log.path`: 先保存旧值, `defer` 恢复 (参考 Tests/LogTests.swift 的写法)

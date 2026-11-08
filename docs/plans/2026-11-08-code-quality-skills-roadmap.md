@@ -59,7 +59,7 @@
 - 耗时前四 suite 占 25.98s 中的 19.3s: SupportLayerTests 6.0s, ProcessRunnerTests 5.6s, WorkspaceMonitorTests 5.4s, NehirTests 2.3s (真实 sleep/轮询间隔, 非 flaky; 266 个测试里 264 个 < 0.5s)
 - RibbonBridge (.m) 未被插桩, 报告中零代表; 分支覆盖列全空 (0/0), 85.12% 不是分支覆盖
 - 三个 make 目标各触发一次全量冷编译 (flags 不同致 SwiftPM 缓存 miss), 没有"仅跑测试"的暖构建目标
-- 覆盖率度量噪声: 同一份代码连跑 6 次 make coverage, Sources 行覆盖落在 73.70%–73.93% (missed 1657–1672), 波动来自 async AppKit/OpenCode 路径 (AppIconCache / BarViews / Nehir / AgentSessionStore 等单次相差 2–6 行); 覆盖率只能按噪声带判定, 不能拿单次数字当阈值
+- 覆盖率度量噪声: 同一份代码连跑 6 次 make coverage 会摆动 (首次实测 73.70%–73.93%, missed 1657–1672), 波动来自 async AppKit/OpenCode 路径 (AppIconCache / BarViews / Nehir / AgentSessionStore 等单次相差 2–6 行); 代码增长后区间上移 (2026-11-08 阶段 7 后实测 74.38%–74.49%), 故闸门取"不低于 73.70%"的下限语义, 不追求区间本身稳定
 - 测试计数口径: swift-testing 的 `Test run with N tests` 统计的是 @Test 声明数, 不是执行用例数 (单个 4 用例的参数化测试会报 "1 test", 已在 Xcode 16.3 / Testing 1501 实测); 参数化改造会让声明数下降而用例数上升 (269 声明/273 用例 → 256 声明/278 用例), 因此度量口径统一用执行用例数
 
 ### 3.3 本机工具链阻塞 (证据链)
