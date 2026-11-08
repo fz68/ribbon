@@ -27,7 +27,7 @@ private func formTarget(_ options: [AgentFormOption]) -> AgentCardTarget {
 
     @Test func testPermissionShowsTheThreeDecisions() {
         let cells = AgentCardActionCells.cells(for: permissionTarget())
-        #expect(cells.titles == ["允许", "总是", "拒绝"],
+        #expect(cells.titles == ["Allow", "Always", "Deny"],
                 "a permission card is unchanged by the form support")
         #expect(cells.count == 3, "all three cells are shown")
     }

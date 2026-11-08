@@ -22,11 +22,11 @@ private final class AgentCardCellButton: NSButton {
 /// The three action cells a card paints, derived from its locked target.
 ///
 /// Pure, so the label rule is testable without AppKit: a permission shows
-/// 允许/总是/拒绝, an answerable form shows up to three option labels (the raw
+/// Allow/Always/Deny, an answerable form shows up to three option labels (the raw
 /// value stands in for a missing label) and hides the cells it does not need.
 struct AgentCardActionCells: Equatable {
     /// The permission cells, left to right.
-    static let permissionTitles = ["允许", "总是", "拒绝"]
+    static let permissionTitles = ["Allow", "Always", "Deny"]
 
     /// Titles left to right; always three entries, empty past `count`.
     let titles: [String]

@@ -61,8 +61,8 @@ set stays as the backstop after a reconnect.
   (a subagent counts once, with the session that started it). Amber `!N`: a permission or form is
   waiting. Green: a turn just ended (whatever its outcome), for three seconds.
 - Tap while a permission waits: an approval card with the session name and its place in the queue,
-  then `允许` / `总是` / `拒绝` (allow once / always / deny). The second tap submits, and the card
-  closes by itself after five seconds.
+  then `Allow` / `Always` / `Deny`. The second tap submits, and the card closes by itself after
+  five seconds.
 - Tap with nothing to approve: jump to the WezTerm pane hosting that session. An answerable form (a
   single question with two or three choices) opens the card instead, with its option labels in the
   three cells.
