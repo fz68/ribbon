@@ -3,7 +3,7 @@
 日期: 2026-11-08
 仓库: ribbon (本仓库)
 基线提交: 64e7bb8 (refactor: fold the monitor wiring in, drop the dead members, share the test helpers)
-状态: 阶段 7 已实施并部分运行时验证 (2026-11-09, 见 §11) — AX 语义落地, announcement 路径实测有效; 卡片超时与对比度待决; 阶段 9 视是否外发而定
+状态: 阶段 0-8 完成 (2026-11-09, 阶段 7 见 §11) — AX 语义落地且 announcement 路径实测有效, 卡片超时已按 WCAG 2.2.1 修复; 仅剩对比度与键盘焦点两项待决; 阶段 9 视是否外发而定
 关联: `.opencode/skills/` 下 9 个技能 (2026-11-08 自 twostraws/Swift-Agent-Skills 索引精选安装)
 
 ## 1. 目标
@@ -91,8 +91,8 @@
 | 4 | swift-api-design-guidelines-skill | 已完成: 8 个 public 声明补文档注释 (技能硬规则: 每个声明都要有); 收窄 TouchBarController.init 为 internal (仅模块内与 @testable 测试使用); 命名/参数标签/暴露泄漏三项审查零发现 (无布尔参数、无非标准缩写、无 public API 返回非 public 类型); C 头两个符号是 Apple 私有选择器, 不可改 | 达成: make lint 绿; make test 262 声明全过; public 声明 8 -> 7 |
 | 5 | swift-architecture-skill | 只读 references/selection-guide.md、coordinator.md、concurrency.md 作诊断, 判断三层划分与 TouchBarController+Agent 的 coordinator 角色; 不重构 | 达成: §10 诊断结论已记录, 无代码改动 |
 | 6 | swift-format-style | 已完成 (审计后改判): 无可转换项 — 两处 DateFormatter 受 clock.json 的 ICU pattern 契约约束, 电量 %/F/闪电是产品设计, ColorHex 的 String(format:) 是字节编码仅供日志; 三处已在代码内注明为例外, 避免后续误改 | 达成: 无行为改动; 三处例外已就地注明; make lint 绿; make test 262 声明全过 |
-| 7 | appkit-accessibility-auditor | 已实施: agent chip / 工作区 chip / 审批卡 / 占位 chip / 媒体 / 电量 / 失败与成功结果 全部补 AX 语义与单停靠点; 长按的两个动作改为具名 custom action; 仅在离散转换播报 (awaiting / 卡打开 / 成功 / 失败); 接入 Reduce Motion; 未做 (需决策或实测): 5 秒自动过期、chip 名对比度、键盘焦点 | 达成 (部分): P0 均为 0; AX 字符串由 11 个测试钉住; 运行时已验证 announcement 有效 (§11); 对比度与超时待决 |
-| 8 | writing-for-interfaces | 部分完成: 两个开关菜单项统一为动态动词标题 (Show/Hide Agent Chip), 缺失值 token 统一为 unknown, README 菜单清单同步; 审批卡的中文按钮 (允许/总是/拒绝) 与全英文界面的语言统一待维护者决定 | 文案评审通过; 可与任意阶段并行 |
+| 7 | appkit-accessibility-auditor | 已实施: agent chip / 工作区 chip / 审批卡 / 占位 chip / 媒体 / 电量 / 失败与成功结果 全部补 AX 语义与单停靠点; 长按的两个动作改为具名 custom action; 仅在离散转换播报 (awaiting / 卡打开 / 成功 / 失败); 接入 Reduce Motion; 旁白运行时卡片不再自动过期 (WCAG 2.2.1, NSWorkspace.isVoiceOverEnabled); 未做: chip 名对比度 (待决策)、键盘焦点 (需先验证 Touch Bar 焦点模式) | 达成 (除两项): P0 均为 0; AX 字符串由 11 个测试钉住; 运行时已验证 announcement 有效 (§11); 对比度与键盘焦点待定 |
+| 8 | writing-for-interfaces | 已完成: 两个开关菜单项统一为动态动词标题 (Show/Hide Agent Chip); 缺失值 token 统一为 unknown; 审批卡按钮改为 Allow / Always / Deny; 界面文案整体统一英文 (clock.json 的默认中文 pattern 属运行时配置, 不在此列); README 四处同步 | 达成: 界面单一语言; 除注释与运行时配置外无中文 UI 字面量 |
 | 9 | macos-spm-app-packaging | 按其校验矩阵查 bundle 结构与签名; 公证被 Developer ID 阻塞, 只做结构校验 | 校验矩阵全过或差异清单记入本文件 |
 
 ### 5.1 并行化未完成项 (自阶段 1 拆出)
