@@ -3,7 +3,7 @@
 日期: 2026-11-08
 仓库: ribbon (本仓库)
 基线提交: 64e7bb8 (refactor: fold the monitor wiring in, drop the dead members, share the test helpers)
-状态: 阶段 6 完成 / 阶段 8 部分完成 (2026-11-08) — 格式化例外已注明; 菜单开关与缺失值 token 已统一; 审批卡语言统一待定; 阶段 7、9 待启动
+状态: 阶段 7 已实施并部分运行时验证 (2026-11-09, 见 §11) — AX 语义落地, announcement 路径实测有效; 卡片超时与对比度待决; 阶段 9 视是否外发而定
 关联: `.opencode/skills/` 下 9 个技能 (2026-11-08 自 twostraws/Swift-Agent-Skills 索引精选安装)
 
 ## 1. 目标
@@ -91,7 +91,7 @@
 | 4 | swift-api-design-guidelines-skill | 已完成: 8 个 public 声明补文档注释 (技能硬规则: 每个声明都要有); 收窄 TouchBarController.init 为 internal (仅模块内与 @testable 测试使用); 命名/参数标签/暴露泄漏三项审查零发现 (无布尔参数、无非标准缩写、无 public API 返回非 public 类型); C 头两个符号是 Apple 私有选择器, 不可改 | 达成: make lint 绿; make test 262 声明全过; public 声明 8 -> 7 |
 | 5 | swift-architecture-skill | 只读 references/selection-guide.md、coordinator.md、concurrency.md 作诊断, 判断三层划分与 TouchBarController+Agent 的 coordinator 角色; 不重构 | 达成: §10 诊断结论已记录, 无代码改动 |
 | 6 | swift-format-style | 已完成 (审计后改判): 无可转换项 — 两处 DateFormatter 受 clock.json 的 ICU pattern 契约约束, 电量 %/F/闪电是产品设计, ColorHex 的 String(format:) 是字节编码仅供日志; 三处已在代码内注明为例外, 避免后续误改 | 达成: 无行为改动; 三处例外已就地注明; make lint 绿; make test 262 声明全过 |
-| 7 | appkit-accessibility-auditor | 对 BarViews / AgentChipView / AgentCardView 跑 P0-P2 审计; chip 截断名以完整名作 AX label; 审批卡 允许/总是/拒绝 三按钮 AX label | P0 清零; 不新增 TCC 请求 |
+| 7 | appkit-accessibility-auditor | 已实施: agent chip / 工作区 chip / 审批卡 / 占位 chip / 媒体 / 电量 / 失败与成功结果 全部补 AX 语义与单停靠点; 长按的两个动作改为具名 custom action; 仅在离散转换播报 (awaiting / 卡打开 / 成功 / 失败); 接入 Reduce Motion; 未做 (需决策或实测): 5 秒自动过期、chip 名对比度、键盘焦点 | 达成 (部分): P0 均为 0; AX 字符串由 11 个测试钉住; 运行时已验证 announcement 有效 (§11); 对比度与超时待决 |
 | 8 | writing-for-interfaces | 部分完成: 两个开关菜单项统一为动态动词标题 (Show/Hide Agent Chip), 缺失值 token 统一为 unknown, README 菜单清单同步; 审批卡的中文按钮 (允许/总是/拒绝) 与全英文界面的语言统一待维护者决定 | 文案评审通过; 可与任意阶段并行 |
 | 9 | macos-spm-app-packaging | 按其校验矩阵查 bundle 结构与签名; 公证被 Developer ID 阻塞, 只做结构校验 | 校验矩阵全过或差异清单记入本文件 |
 
@@ -167,3 +167,24 @@
 - 不建议新增 view model 层: AppKit 视图 + 纯布局数学已经可测, 加一层只增加跳转。
 - 可选拆分 (只在文件继续变长时再做, 当前不做): EventStream.swift 565 行内含 SSE 分帧 / 重试策略 / 类型预筛 / 空闲检测四件事 (SSELineParser 与 StreamRetryPolicy 已是独立类型, 仅是同居一文件); AppDelegate 混合状态栏菜单构造与生命周期; TouchBarController+AgentCard 338 行混合 UI 挂载、回复提交、进程激活与 10Hz tick。
 - C 桥头文件 (RibbonBridge.h, 7 行) 的两个符号是 Apple 私有选择器, 命名由系统决定, 无可改; 风险已在 README "Known limits" 声明。
+
+## 11. 运行时验证 (阶段 7, 2026-11-09 实测)
+
+方法: 在本机 13" M1 触摸条机型上开启旁白 (Cmd+F5) 实测; 代码侧只能证明字符串存在, 是否被朗读只有这一步能回答。
+
+### 已验证
+
+- Touch Bar 上的元素对旁白可达: 点击 chip 有朗读。这回答了审计 A1 的前半 — 系统模态 bar 内的 NSView 确实进入 AX 树, 因此阶段 7 的语义有落脚点, 不需要改用菜单栏替身。
+- 审批到达时的 announcement 会被朗读 (听到一声对应 "N approval waiting")。这回答了审计 A1 的后半: NSAccessibility.post(.announcementRequested) 从 deactivated 的 LSUIElement 应用发出同样有效, 故 F4/F5 的播报机制成立。
+- 点击动作格时不朗读原状态 (点击 Always 无声), 已定位为设计不对称而非实现缺陷: 失败有播报、成功没有。已补成功结果播报 (Allowed / Always allowed / Denied / Answer sent)。
+
+### 待复测
+
+- 卡片身份播报 ("<会话名>, request N of M") 尚未在实测中单独确认 — 上一轮只报了一声。
+- 成功结果播报 (Allowed 等) 是本次实测之后才加的, 未复测。
+
+### 未验证
+
+- 5 秒卡片自动过期对读屏用户是否够用 (需掐表实测)。
+- 键盘焦点 (审计 F15): refusesFirstResponder / focusRingType 的改动必须先确认 Touch Bar 焦点模式能否把按键送进自定义 item, 否则是白做工。
+- Voice Control / Switch Control 未测 (审计 F2/F6 的受益面)。

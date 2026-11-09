@@ -332,7 +332,17 @@ extension TouchBarController {
         // normal open phase with a fresh timeout; expiring first would close the
         // card at the end of the flash instead of letting the user retry.
         agentCardMachine.recoverFromFlash(now: now, flash: Theme.Timing.agentCardErrorFlash)
-        if agentCardMachine.expire(now: now, timeout: Theme.Timing.agentCardTimeout) {
+        // WCAG 2.2.1 (Timing Adjustable): the five second window is not enough
+        // to hear and answer the card under VoiceOver, and a card that closes on
+        // its own is a time limit the user cannot turn off or extend. So while
+        // VoiceOver is running the auto-expire is suppressed; every other close
+        // path (submitted, race-replied, explicit dismiss, skip) still applies.
+        // `expire` ignores `.submitting` anyway, so a suppressed tick cannot
+        // extend a submit in flight either. `NSWorkspace.isVoiceOverEnabled`
+        // (macOS 10.13+) is the documented, permission-free signal; it is a
+        // plain cached property read, so the 10 Hz tick's cost is unchanged.
+        if !NSWorkspace.shared.isVoiceOverEnabled,
+           agentCardMachine.expire(now: now, timeout: Theme.Timing.agentCardTimeout) {
             log("agent card timeout")
             closeAgentCardUI()
             return
