@@ -174,8 +174,9 @@ struct AgentChipPress {
 /// properties (opacity and a hairline frame), so a frame never triggers a layout
 /// pass inside the Touch Bar's remote rendering.
 final class AgentChipView: NSView {
-    /// Full sweep of the busy hairline.
-    private static let hairlinePeriod: TimeInterval = 2.4
+    /// Full sweep of the busy hairline. `nonisolated` so the pure phase math
+    /// below can live outside the view's main-actor isolation.
+    private nonisolated static let hairlinePeriod: TimeInterval = 2.4
     private static let hairlineHeight: CGFloat = 2
     /// The hairline never shrinks below a quarter or grows past three quarters
     /// of the chip, so it reads as motion rather than a fill level.
@@ -353,7 +354,10 @@ final class AgentChipView: NSView {
         hairline.backgroundColor = NSColor(argb: visual.border).cgColor
         tapButton.setAccessibilityValue(visual.accessibilityValue)
         if visual.hairline {
-            layoutHairline(phase: hairlinePhase)
+            // A repaint during Reduce Motion must also land on the settled
+            // frame, not on whatever phase the last tick left behind.
+            layoutHairline(phase: Self.hairlinePhase(elapsed: 0,
+                                                     reducesMotion: reducesMotion))
         } else {
             hairline.frame = .zero
         }
@@ -362,14 +366,33 @@ final class AgentChipView: NSView {
         }
     }
 
+    /// The sweep phase for a moment in time.
+    ///
+    /// Reduce Motion freezes the line at its complete state, so the static chip
+    /// shows a full-width bar instead of a frozen sliver.
+    nonisolated static func hairlinePhase(elapsed: TimeInterval,
+                                          reducesMotion: Bool) -> CGFloat {
+        if reducesMotion { return 1 }
+        let cycles = elapsed / hairlinePeriod
+        let fraction = cycles - floor(cycles)
+        // Triangle wave: 0 -> 1 -> 0 over one period.
+        return CGFloat(fraction < 0.5 ? fraction * 2 : (1 - fraction) * 2)
+    }
+
     /// Advances the animations for `elapsed` seconds since they started.
     ///
     /// A state that animates nothing only resets the two properties, so the
     /// caller can keep one timer for every state.
     func animate(elapsed: TimeInterval) {
         // Reduce Motion: the fill, the border and the number already carry the
-        // state, so the breath and the sweep hold still instead of moving.
-        guard !reducesMotion else { return }
+        // state. Settle the two animated properties at their complete values
+        // instead of leaving them frozen mid-flight, so the busy hairline is a
+        // full-width bar rather than the shortest sliver.
+        if reducesMotion {
+            layer?.opacity = 1
+            if visual.hairline { layoutHairline(phase: 1) }
+            return
+        }
         if visual.pulses {
             let phase = 0.5 - 0.5 * cos(2 * .pi * elapsed / Theme.Timing.agentPulsePeriod)
             layer?.opacity = Self.pulseMinOpacity
@@ -378,11 +401,8 @@ final class AgentChipView: NSView {
             layer?.opacity = 1
         }
         if visual.hairline {
-            let cycles = elapsed / Self.hairlinePeriod
-            let fraction = cycles - floor(cycles)
-            // Triangle wave: 0 -> 1 -> 0 over one period.
-            let phase = fraction < 0.5 ? fraction * 2 : (1 - fraction) * 2
-            layoutHairline(phase: CGFloat(phase))
+            layoutHairline(phase: Self.hairlinePhase(elapsed: elapsed,
+                                                     reducesMotion: false))
         }
     }
 

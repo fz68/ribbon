@@ -3,7 +3,7 @@
 日期: 2026-11-08
 仓库: ribbon (本仓库)
 基线提交: 64e7bb8 (refactor: fold the monitor wiring in, drop the dead members, share the test helpers)
-状态: 阶段 0-8 完成 (2026-11-09, 阶段 7 见 §11) — AX 语义落地且 announcement 路径实测有效, 卡片超时已按 WCAG 2.2.1 修复; 仅剩对比度与键盘焦点两项待决; 阶段 9 视是否外发而定
+状态: 阶段 0-8 完成 (2026-11-09, 阶段 7 见 §11) — AX 语义落地且 announcement 路径实测有效, 卡片超时已按 WCAG 2.2.1 修复; 仅剩对比度与键盘焦点两项待决; 减弱动态效果下的静态表现已修; 阶段 9 视是否外发而定
 关联: `.opencode/skills/` 下 9 个技能 (2026-11-08 自 twostraws/Swift-Agent-Skills 索引精选安装)
 
 ## 1. 目标
@@ -127,7 +127,7 @@
 ## 8. 已知缺口 (无技能覆盖)
 
 - 真实攻击面是 ToolLocator.swift 的 PATH/Homebrew 前缀查找与 ProcessRunner.swift 的子进程调用; 9 个技能无一覆盖, 依赖人工 review + 阶段 3 的 hotspots 清单兜底
-- 测试套件存在既有 flake (阶段 2 期间观测): WorkspaceBackendTests.testMonitoringCallsAreSafeWithoutAStream 在约 8 次全量运行中失败 1 次 (nehir 轮询计数 10s 内保持 0), 另有 1 次全量运行挂起约 15 分钟被终止; HEAD 基线 5/5 绿、该测试单独运行 8/8 绿, 判断为进程启动/重启竞态而非阶段 2 引入, 需单独立 ticket
+- 测试假失败的成因已查实 (2026-11-09): 不是进程竞态。一次全量运行墙钟 296.5s, 其中 268s 是 macOS Idle Sleep (pmset -g log: 13:28:32 睡眠 -> 13:33:00 唤醒), 框架自报 29.5s 是因为其时钟在睡眠期间不前进; 同一次睡眠让 MediaTests 的 waitUntil 墙钟预算被吃掉, 报出"失败于 0.350 秒"。已把 waitUntil 的 deadline 改为 DispatchTime (单调, 睡眠期间不前进)。另记录一个一次性成本: 进程内首次加载图标时主线程会在 ImageIO 插件 dlopen 上阻塞约 2s (sample 抓到栈: refreshNow -> rebuildChips -> NSImageView(image:)), 未修。
 - ClockFormat 的星期重映射用 Calendar.current 取日期分量, 而 pattern/locale 来自 clock.json; 系统日历设为非公历时两条路径可能不一致 (默认 pattern 无年份, 影响限于月/日), 未修
 
 ## 9. 并发审计结论 (2026-11-08)
@@ -188,3 +188,8 @@
 - 5 秒卡片自动过期对读屏用户是否够用 (需掐表实测)。
 - 键盘焦点 (审计 F15): refusesFirstResponder / focusRingType 的改动必须先确认 Touch Bar 焦点模式能否把按键送进自定义 item, 否则是白做工。
 - Voice Control / Switch Control 未测 (审计 F2/F6 的受益面)。
+
+### 减弱动态效果 (2026-11-09)
+
+- 用户实测环境已开启该系统开关, 因此 agent chip 的脉冲与扫描线不运行 (按 HIG/WCAG 有意为之)。
+- 首次实现留了缺陷: busy 状态的横线停在 phase 0 的最短宽度, 看起来像一条残线。已修为定格满宽, 并把相位决策抽成纯函数 `AgentChipView.hairlinePhase(elapsed:reducesMotion:)` 以便测试。

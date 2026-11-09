@@ -59,4 +59,43 @@ import Testing
         #expect(AgentChipVisual.visual(for: .awaiting(count: 1)).text == "!1")
         #expect(AgentChipVisual.visual(for: .awaiting(count: 9)).text == "!9")
     }
+
+    // MARK: - hairlinePhase: the busy sweep, and its Reduce Motion still frame
+
+    /// Mirrors the private `AgentChipView.hairlinePeriod`, which stays private
+    /// because it is not part of any other contract.
+    private let hairlinePeriod: TimeInterval = 2.4
+
+    @Test func testReduceMotionHoldsTheHairlineAtFullWidth() {
+        // Any elapsed value: under Reduce Motion the line is a static, complete
+        // bar, never a frozen fragment at the shortest width.
+        for elapsed in [0.0, 0.6, 1.2, 2.4, 60.0] as [TimeInterval] {
+            let phase = AgentChipView.hairlinePhase(elapsed: elapsed,
+                                                    reducesMotion: true)
+            #expect(phase == 1,
+                    "Reduce Motion must settle the line at full width (elapsed \(elapsed))")
+        }
+    }
+
+    @Test func testTheHairlineSweepsAsATriangleWave() {
+        #expect(AgentChipView.hairlinePhase(elapsed: 0, reducesMotion: false) == 0,
+                "the sweep starts at the shortest position")
+        #expect(AgentChipView.hairlinePhase(elapsed: hairlinePeriod / 2,
+                                           reducesMotion: false) == 1,
+                "half a period is the widest position")
+        #expect(AgentChipView.hairlinePhase(elapsed: hairlinePeriod,
+                                           reducesMotion: false) == 0,
+                "a full period returns to the shortest position")
+    }
+
+    @Test func testTheHairlinePhaseStaysWithinTheSweepRange() {
+        let steps = 48
+        for step in 0...steps {
+            let elapsed = hairlinePeriod * Double(step) / Double(steps)
+            let phase = AgentChipView.hairlinePhase(elapsed: elapsed,
+                                                    reducesMotion: false)
+            #expect(phase >= 0 && phase <= 1,
+                    "phase \(phase) at step \(step) stays within 0...1")
+        }
+    }
 }

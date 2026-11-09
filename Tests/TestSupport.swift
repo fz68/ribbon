@@ -48,10 +48,11 @@ enum TestTemp {
 /// `DispatchQueue.main.async`, so the window covers the whole hop from spawning
 /// the process to that delivery. Two seconds is too tight on a loaded CI runner;
 /// the poll returns as soon as the condition holds, so a wide window costs
-/// nothing on the fast path.
+/// nothing on the fast path. The window is measured on the monotonic clock, so a
+/// system sleep or a long main-thread stall cannot consume it.
 func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
+    let deadline = DispatchTime.now() + timeout
+    while DispatchTime.now() < deadline {
         if condition() { return true }
         usleep(20_000)
     }
